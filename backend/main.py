@@ -1,13 +1,18 @@
 import os
 import json
 import logging
+import io
+import pandas as pd
+from datetime import datetime
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from typing import List, Dict, Optional
+from fpdf import FPDF
 
 import numpy as np
 import cv2
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Response
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -244,6 +249,129 @@ async def clear_session_cache(session_id: str):
     if embedding_manager:
         embedding_manager.clear_cache(session_id)
     return {"status": "success"}
+
+@app.get("/sessions")
+async def get_sessions():
+    """Fetch all sessions sorted by created_at"""
+    try:
+        resp = supabase.table("sessions").select("*").order("created_at", desc=True).execute()
+        return resp.data
+    except Exception as e:
+        logger.exception("Error fetching sessions")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/sessions/{session_id}/attendance")
+async def get_session_attendance(session_id: str):
+    """Fetch attendance records for a specific session"""
+    try:
+        # Get attendance records joined with student info
+        resp = supabase.table("attendance_records")\
+            .select("*, students(name, roll_no)")\
+            .eq("session_id", session_id)\
+            .execute()
+        
+        # Format the data
+        attendance = []
+        for record in resp.data:
+            attendance.append({
+                "student_id": record["student_id"],
+                "name": record["students"]["name"],
+                "roll_no": record["students"]["roll_no"],
+                "marked_at": record["created_at"]
+            })
+        return attendance
+    except Exception as e:
+        logger.exception(f"Error fetching attendance for session {session_id}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/sessions/{session_id}/export/{format}")
+async def export_session(session_id: str, format: str):
+    """Export session attendance in CSV or PDF format"""
+    try:
+        # 1. Fetch session details
+        session_resp = supabase.table("sessions").select("*").eq("id", session_id).single().execute()
+        if not session_resp.data:
+            raise HTTPException(status_code=404, detail="Session not found")
+        session = session_resp.data
+        
+        # 2. Fetch attendance records
+        attendance_resp = supabase.table("attendance_records")\
+            .select("*, students(name, roll_no)")\
+            .eq("session_id", session_id)\
+            .execute()
+        
+        # 3. Prepare data for export
+        data = []
+        for record in attendance_resp.data:
+            data.append({
+                "Roll No": record["students"]["roll_no"],
+                "Name": record["students"]["name"],
+                "Marked At": record["created_at"]
+            })
+        
+        df = pd.DataFrame(data)
+        if df.empty:
+            df = pd.DataFrame(columns=["Roll No", "Name", "Marked At"])
+        else:
+            df = df.sort_values("Roll No")
+
+        filename = f"Attendance_{session['branch']}_{session['year']}_{session['division']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        if format.lower() == "csv":
+            stream = io.StringIO()
+            df.to_csv(stream, index=False)
+            response = StreamingResponse(
+                iter([stream.getvalue()]),
+                media_type="text/csv",
+                headers={"Content-Disposition": f"attachment; filename={filename}.csv"}
+            )
+            return response
+
+        elif format.lower() == "pdf":
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", "B", 16)
+            
+            # Title
+            pdf.cell(0, 10, f"Attendance Report - {session['subject']}", ln=True, align="C")
+            pdf.set_font("Arial", "", 12)
+            pdf.cell(0, 10, f"Branch: {session['branch']} | Year: {session['year']} | Div: {session['division']}", ln=True, align="C")
+            pdf.cell(0, 10, f"Date: {session['created_at'][:10]}", ln=True, align="C")
+            pdf.ln(10)
+            
+            # Table Header
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(40, 10, "Roll No", 1)
+            pdf.cell(80, 10, "Name", 1)
+            pdf.cell(60, 10, "Marked At", 1)
+            pdf.ln()
+            
+            # Table Body
+            pdf.set_font("Arial", "", 12)
+            for _, row in df.iterrows():
+                pdf.cell(40, 10, str(row["Roll No"]), 1)
+                pdf.cell(80, 10, str(row["Name"]), 1)
+                pdf.cell(60, 10, str(row["Marked At"])[:19], 1)
+                pdf.ln()
+            
+            # Total
+            pdf.ln(10)
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 10, f"Total Students Present: {len(df)}", ln=True)
+
+            pdf_output = pdf.output(dest='S')
+            return Response(
+                content=pdf_output,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f"attachment; filename={filename}.pdf"}
+            )
+
+        else:
+            raise HTTPException(status_code=400, detail="Invalid format. Use 'csv' or 'pdf'.")
+
+    except Exception as e:
+        logger.exception(f"Error exporting session {session_id}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
