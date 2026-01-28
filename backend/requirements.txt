@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+supabase
+python-dotenv
+huggingface_hub
+requests
+pillow
+opencv-python-headless
+numpy
+pydantic
+pydantic-settings
+python-multipart
+onnxruntime
