@@ -7,9 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Loader2, Plus, LogOut, User } from "lucide-react";
+import { Loader2, Plus, LogOut, User, ArrowLeft } from "lucide-react";
 
-const Dashboard = () => {
+const NewAttendance = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [user, setUser] = useState<any>(null);
@@ -78,7 +78,7 @@ const Dashboard = () => {
       setSubjects(subjectsData || []);
     } catch (error) {
       console.error("Error fetching data:", error);
-      toast.error("Failed to load dashboard data");
+      toast.error("Failed to load session configuration");
     } finally {
       setLoading(false);
     }
@@ -100,7 +100,7 @@ const Dashboard = () => {
     try {
       // Calculate end time
       const [hours, minutes] = formData.startTime.split(':').map(Number);
-      const endHours = hours + parseInt(formData.duration);
+      const endHours = (hours + parseInt(formData.duration)) % 24;
       const endTime = `${endHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 
       const selectedSubject = subjects.find(s => s.code === formData.subject);
@@ -124,7 +124,6 @@ const Dashboard = () => {
         await fetch(`http://localhost:8000/load-session-embeddings/${data.id}`, { method: 'POST' });
       } catch (beError) {
         console.error("Backend pre-load failed:", beError);
-        // Don't fail the whole process if backend is down, we'll try again on the session page
       }
 
       toast.success("Session created successfully");
@@ -167,9 +166,16 @@ const Dashboard = () => {
       </nav>
 
       <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-12">
-        <Card className="border-border bg-card/50 backdrop-blur-sm">
+        <div className="mb-6 flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => navigate("/teacher/dashboard")}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <h2 className="text-2xl font-bold tracking-tight">Configure New Session</h2>
+        </div>
+
+        <Card className="border-border bg-card/50 backdrop-blur-sm shadow-xl">
           <CardHeader>
-            <CardTitle className="text-2xl">Start New Attendance Session</CardTitle>
+            <CardTitle>Class Details</CardTitle>
             <CardDescription>Select the class details to begin marking attendance.</CardDescription>
           </CardHeader>
           <form onSubmit={handleCreateSession}>
@@ -293,4 +299,4 @@ const Dashboard = () => {
   );
 };
 
-export default Dashboard;
+export default NewAttendance;

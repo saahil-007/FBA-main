@@ -3,12 +3,17 @@ import { useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, CheckCircle2, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { Loader2, CheckCircle2, Users, FileText, Table as TableIcon } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+const API_BASE_URL = "http://localhost:8000";
 
 const StudentListView = () => {
   const { sessionId } = useParams();
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState<string | null>(null);
   const [session, setSession] = useState<any>(null);
   const [presentStudents, setPresentStudents] = useState<any[]>([]);
 
@@ -70,6 +75,36 @@ const StudentListView = () => {
     }
   };
 
+  const handleExport = async (format: 'csv' | 'pdf') => {
+    if (session?.status !== 'completed') {
+      toast.error("Export is only available after the session has ended.");
+      return;
+    }
+
+    try {
+      setExporting(format);
+      const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/export/${format}`);
+      if (!response.ok) throw new Error("Export failed");
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Attendance_Session_${session.subject}_${new Date().toISOString().split('T')[0]}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast.success(`Exported as ${format.toUpperCase()} successfully`);
+    } catch (error) {
+      console.error("Export error:", error);
+      toast.error("Failed to export data");
+    } finally {
+      setExporting(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -92,9 +127,41 @@ const StudentListView = () => {
         <div className="text-center space-y-2">
           <h1 className="text-3xl font-bold font-poppins">{session.subject}</h1>
           <p className="text-muted-foreground">{session.branch} • {session.year} • Div {session.division}</p>
-          <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 mt-2">
-            LIVE ATTENDANCE
-          </Badge>
+          <div className="flex flex-col items-center gap-4 mt-2">
+            <Badge variant="outline" className={`${session.status === 'completed' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' : 'bg-green-500/10 text-green-500 border-green-500/20'}`}>
+              {session.status === 'completed' ? 'SESSION COMPLETED' : 'LIVE ATTENDANCE'}
+            </Badge>
+
+            <div className="flex flex-col items-center gap-2">
+              <div className="flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className={`gap-2 h-9 border-primary/20 ${session.status !== 'completed' ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:bg-primary/5'}`}
+                  onClick={() => handleExport('csv')}
+                  disabled={exporting !== null}
+                >
+                  {exporting === 'csv' ? <Loader2 className="h-4 w-4 animate-spin" /> : <TableIcon className="h-4 w-4 text-primary" />}
+                  Export CSV
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className={`gap-2 h-9 border-primary/20 ${session.status !== 'completed' ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:bg-primary/5'}`}
+                  onClick={() => handleExport('pdf')}
+                  disabled={exporting !== null}
+                >
+                  {exporting === 'pdf' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4 text-primary" />}
+                  Export PDF
+                </Button>
+              </div>
+              {session.status !== 'completed' && (
+                <p className="text-[10px] text-muted-foreground italic">
+                  * Export will be enabled after teacher ends the session
+                </p>
+              )}
+            </div>
+          </div>
         </div>
 
         <Card className="border-border bg-card/50 backdrop-blur-xl">

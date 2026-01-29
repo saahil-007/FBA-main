@@ -5,13 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Loader2, Camera, Users, CheckCircle2, QrCode, Share2, LogOut, ArrowLeft, UserCheck } from "lucide-react";
+import { Loader2, Camera, Users, CheckCircle2, QrCode, Share2, LogOut, ArrowLeft, UserCheck, Download, FileText, Table as TableIcon, RefreshCcw } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+const API_BASE_URL = "http://localhost:8000";
 
 const AttendanceSession = () => {
   const { sessionId } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState<string | null>(null);
   const [session, setSession] = useState<any>(null);
   const [presentStudents, setPresentStudents] = useState<any[]>([]);
 
@@ -131,7 +134,8 @@ const AttendanceSession = () => {
       toast.success("Session ended and saved");
       // Clear backend cache
       fetch(`http://localhost:8000/clear-session-cache/${sessionId}`, { method: 'POST' }).catch(console.error);
-      navigate("/dashboard");
+      // Update local state to show exports immediately
+      setSession(prev => ({ ...prev, status: 'completed' }));
     }
   };
 
@@ -139,6 +143,31 @@ const AttendanceSession = () => {
     const url = `${window.location.origin}${path}`;
     navigator.clipboard.writeText(url);
     toast.success("Link copied to clipboard");
+  };
+
+  const handleExport = async (format: 'csv' | 'pdf') => {
+    try {
+      setExporting(format);
+      const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/export/${format}`);
+      if (!response.ok) throw new Error("Export failed");
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Attendance_${session.subject}_${new Date().toISOString().split('T')[0]}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast.success(`Exported as ${format.toUpperCase()} successfully`);
+    } catch (error) {
+      console.error("Export error:", error);
+      toast.error("Failed to export data");
+    } finally {
+      setExporting(null);
+    }
   };
 
   if (loading) {
@@ -202,25 +231,47 @@ const AttendanceSession = () => {
 
         {/* Quick Links */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card className="border-border bg-card/50">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Camera className="w-5 h-5 text-primary" />
-                Recognition Camera
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">Open this on a tablet or phone to start the facial recognition scanner.</p>
-              <div className="flex gap-2">
-                <Button className="flex-1" onClick={() => navigate(`/teacher/camera/${sessionId}`)}>
-                  Open Camera
-                </Button>
-                <Button variant="outline" size="icon" onClick={() => copyToClipboard(`/teacher/camera/${sessionId}`)}>
-                  <Share2 className="w-4 h-4" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          {session.status !== 'completed' ? (
+            <Card className="border-border bg-card/50">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Camera className="w-5 h-5 text-primary" />
+                  Recognition Camera
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">Open this on a tablet or phone to start the facial recognition scanner.</p>
+                <div className="flex gap-2">
+                  <Button className="flex-1" onClick={() => navigate(`/teacher/camera/${sessionId}`)}>
+                    Open Camera
+                  </Button>
+                  <Button variant="outline" size="icon" onClick={() => copyToClipboard(`/teacher/camera/${sessionId}`)}>
+                    <Share2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-primary/20 bg-primary/5 backdrop-blur-xl">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2 text-primary">
+                  <CheckCircle2 className="w-5 h-5" />
+                  Session Completed
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">This session has been finished. You can now export the final attendance records.</p>
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1 gap-2" onClick={() => handleExport('csv')}>
+                    <TableIcon className="w-4 h-4" /> Export CSV
+                  </Button>
+                  <Button variant="outline" className="flex-1 gap-2" onClick={() => handleExport('pdf')}>
+                    <FileText className="w-4 h-4" /> Export PDF
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <Card className="border-border bg-card/50">
             <CardHeader>
@@ -246,13 +297,45 @@ const AttendanceSession = () => {
         {/* Present Students List */}
         <Card className="border-border bg-card/50">
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-xl flex items-center gap-2">
+            <div className="flex items-center gap-2">
               <CheckCircle2 className="w-6 h-6 text-green-500" />
-              Present Students ({presentStudents.length})
-            </CardTitle>
-            <Button variant="outline" size="sm" onClick={fetchPresentStudents}>
-              Refresh
-            </Button>
+              <CardTitle className="text-xl">
+                Present Students ({presentStudents.length})
+              </CardTitle>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-8 text-xs gap-2 hover:bg-primary/5"
+                  onClick={() => handleExport('csv')}
+                  disabled={exporting !== null}
+                >
+                  {exporting === 'csv' ? <Loader2 className="h-3 w-3 animate-spin" /> : <TableIcon className="h-3 w-3 text-primary" />}
+                  CSV
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-8 text-xs gap-2 hover:bg-primary/5"
+                  onClick={() => handleExport('pdf')}
+                  disabled={exporting !== null}
+                >
+                  {exporting === 'pdf' ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3 text-primary" />}
+                  PDF
+                </Button>
+              </div>
+              <Button 
+                variant="outline" 
+                size="icon" 
+                className="h-8 w-8" 
+                onClick={fetchPresentStudents}
+                title="Refresh list"
+              >
+                <RefreshCcw className="h-4 w-4" />
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="p-0 sm:p-6">
             <div className="overflow-x-auto">
@@ -289,14 +372,16 @@ const AttendanceSession = () => {
         </Card>
 
         {/* Action Footer */}
-        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-          <Button variant="outline" className="flex-1 h-12" onClick={() => toast.info("Manual verification mode enabled")}>
-            Manual Verification
-          </Button>
-          <Button variant="destructive" className="flex-1 h-12" onClick={endSession}>
-            End & Save Session
-          </Button>
-        </div>
+        {session.status !== 'completed' && (
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+            <Button variant="outline" className="flex-1 h-12" onClick={() => toast.info("Manual verification mode enabled")}>
+              Manual Verification
+            </Button>
+            <Button variant="destructive" className="flex-1 h-12" onClick={endSession}>
+              End & Save Session
+            </Button>
+          </div>
+        )}
       </main>
     </div>
   );

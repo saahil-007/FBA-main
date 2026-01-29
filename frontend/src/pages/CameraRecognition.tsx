@@ -5,7 +5,9 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Loader2, Camera, X, CheckCircle2, UserCheck } from "lucide-react";
+import { Loader2, Camera, X,CheckCircle2, UserCheck } from "lucide-react";
+
+const API_BASE_URL = "http://localhost:8000";
 
 const CameraRecognition = () => {
   const { sessionId } = useParams();
@@ -18,7 +20,26 @@ const CameraRecognition = () => {
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [currentBox, setCurrentBox] = useState<number[] | null>(null);
   const [isRecognized, setIsRecognized] = useState(false);
+  const [isCameraActive, setIsCameraActive] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const handleFinish = async () => {
+    try {
+      // Mark session as completed in Supabase
+      const { error } = await supabase
+        .from("sessions")
+        .update({ status: "completed" })
+        .eq("id", sessionId);
+      
+      if (error) throw error;
+      
+      toast.success("Session finished successfully");
+      navigate(`/teacher/new-attendance/${sessionId}`);
+    } catch (error) {
+      console.error("Error finishing session:", error);
+      toast.error("Failed to finish session");
+    }
+  };
 
   useEffect(() => {
     checkSession();
@@ -177,86 +198,116 @@ const CameraRecognition = () => {
   }
 
   return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6">
-      <div className="w-full max-w-2xl relative">
-        {/* Header/Controls */}
-        <div className="absolute top-4 left-4 right-4 z-10 flex justify-between items-center">
-          <div className="bg-black/50 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${recognizing ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`} />
-            <span className="text-white text-sm font-medium">
-              {recognizing ? 'Analyzing...' : 'Ready'}
-            </span>
+    <div className="min-h-screen bg-[#0F0F10] text-white p-6">
+      <div className="max-w-2xl mx-auto space-y-8">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-4">
+          <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="text-white hover:bg-white/10">
+            <X className="h-6 w-6" />
+          </Button>
+          <div className="flex-1 text-center">
+            <h1 className="text-xl font-bold font-poppins">Active Session</h1>
+            <p className="text-white/60 text-sm">Real-time Recognition</p>
           </div>
-          <Button variant="ghost" size="icon" className="rounded-full bg-black/50 border border-white/10 text-white" onClick={() => navigate(-1)}>
-            <X className="w-5 h-5" />
+          <Button 
+            variant="default" 
+            size="sm" 
+            className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg"
+            onClick={handleFinish}
+          >
+            Finish
           </Button>
         </div>
 
-        {/* Camera Feed */}
-        <Card className="overflow-hidden border-2 border-primary/20 bg-card/10 backdrop-blur-xl relative aspect-video flex items-center justify-center">
-          <Webcam
-            audio={false}
-            ref={webcamRef}
-            screenshotFormat="image/jpeg"
-            videoConstraints={{
-              facingMode: "user",
-              width: 1280,
-              height: 720
-            }}
-            onUserMedia={() => setIsCameraReady(true)}
-            className="w-full h-full object-cover"
-          />
-          
-          {/* Overlay Canvas for Boxes */}
-          <canvas
-            ref={canvasRef}
-            className="absolute inset-0 w-full h-full z-20 pointer-events-none"
-          />
-          
-          {/* Overlay for Face Position */}
-          <div className="absolute inset-0 border-[40px] border-black/40 flex items-center justify-center pointer-events-none">
-            <div className="w-64 h-80 border-2 border-white/30 rounded-[40px] relative">
-              <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-xl" />
-              <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-xl" />
-              <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-xl" />
-              <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-primary rounded-br-xl" />
-            </div>
+        {/* Camera Feed Section */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium text-white/60 flex items-center gap-2">
+              <Camera className="w-4 h-4" />
+              Camera Feed
+            </h2>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className={`text-xs h-7 px-3 ${isCameraActive ? 'border-red-500/50 text-red-500 hover:bg-red-500/10' : 'border-green-500/50 text-green-500 hover:bg-green-500/10'}`}
+              onClick={() => setIsCameraActive(!isCameraActive)}
+            >
+              {isCameraActive ? "Stop Camera" : "Start Camera"}
+            </Button>
           </div>
-        </Card>
 
-        {/* Status / Last Recognized */}
-        <div className="mt-8 text-center space-y-4">
-          {lastMatch ? (
-            <div className={`px-6 py-4 rounded-2xl animate-in fade-in slide-in-from-bottom-4 border ${
-              lastMatch.status === "already_marked" 
-                ? "bg-blue-500/10 border-blue-500/20" 
-                : "bg-green-500/10 border-green-500/20"
-            }`}>
-              <p className={`${
-                lastMatch.status === "already_marked" ? "text-blue-500" : "text-green-500"
-              } text-sm font-medium mb-1`}>
-                {lastMatch.status === "already_marked" ? "Already Marked" : "Successfully Marked"}
-              </p>
-              <h3 className="text-white text-xl font-bold">
-                {lastMatch.name} <span className="text-white/60 font-medium">({lastMatch.roll_no})</span>
-              </h3>
-            </div>
-          ) : lastSuccessfullyMarked ? (
-            <div className="bg-white/5 border border-white/10 px-6 py-4 rounded-2xl animate-in fade-in slide-in-from-bottom-4">
-              <p className="text-white/60 text-sm font-medium mb-1">Recent Activity</p>
-              <h3 className="text-white text-lg font-semibold">
-                Last student marked was roll no - <span className="text-primary">{lastSuccessfullyMarked.roll_no}</span>
-              </h3>
-              <p className="text-white/40 text-xs mt-1">{lastSuccessfullyMarked.name}</p>
-            </div>
-          ) : (
-            <p className="text-white/60 text-sm">Position your face within the frame to mark attendance</p>
-          )}
-          
-          <Button size="lg" className="w-full h-14 rounded-2xl text-lg font-bold" onClick={captureAndRecognize} disabled={recognizing || !isCameraReady}>
-            {recognizing ? <Loader2 className="w-6 h-6 animate-spin mr-2" /> : <Camera className="w-6 h-6 mr-2" />}
-            Manual Capture
-          </Button>
+          <Card className="overflow-hidden border-2 border-primary/20 bg-card/10 backdrop-blur-xl relative aspect-video flex items-center justify-center">
+            {isCameraActive ? (
+              <>
+                <Webcam
+                  audio={false}
+                  ref={webcamRef}
+                  screenshotFormat="image/jpeg"
+                  videoConstraints={{
+                    facingMode: "user",
+                    width: 1280,
+                    height: 720
+                  }}
+                  onUserMedia={() => setIsCameraReady(true)}
+                  className="w-full h-full object-cover"
+                />
+                <canvas
+                  ref={canvasRef}
+                  className="absolute inset-0 w-full h-full z-20 pointer-events-none"
+                />
+                <div className="absolute inset-0 border-[40px] border-black/40 flex items-center justify-center pointer-events-none">
+                  <div className="w-64 h-80 border-2 border-white/30 rounded-[40px] relative">
+                    <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-xl" />
+                    <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-xl" />
+                    <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-xl" />
+                    <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-primary rounded-br-xl" />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center gap-4 text-white/40">
+                <div className="p-4 rounded-full bg-white/5 border border-white/10">
+                  <Camera className="w-12 h-12 opacity-20" />
+                </div>
+                <p className="text-sm font-medium">Camera is inactive</p>
+                <Button variant="outline" size="sm" onClick={() => setIsCameraActive(true)}>
+                  Enable Camera
+                </Button>
+              </div>
+            )}
+          </Card>
+        </div>
+
+        {/* Recognition Status Area */}
+        <div className="space-y-6">
+          <div className="text-center">
+            {lastMatch ? (
+              <div className={`px-6 py-4 rounded-2xl animate-in fade-in slide-in-from-bottom-4 border ${
+                lastMatch.status === "already_marked" 
+                  ? "bg-blue-500/10 border-blue-500/20" 
+                  : "bg-green-500/10 border-green-500/20"
+              }`}>
+                <p className={`${
+                  lastMatch.status === "already_marked" ? "text-blue-500" : "text-green-500"
+                } text-sm font-medium mb-1`}>
+                  {lastMatch.status === "already_marked" ? "Already Marked" : "Successfully Marked"}
+                </p>
+                <h3 className="text-white text-xl font-bold">
+                  {lastMatch.name} <span className="text-white/60 font-medium">({lastMatch.roll_no})</span>
+                </h3>
+              </div>
+            ) : lastSuccessfullyMarked ? (
+              <div className="bg-white/5 border border-white/10 px-6 py-4 rounded-2xl animate-in fade-in slide-in-from-bottom-4">
+                <p className="text-white/60 text-sm font-medium mb-1">Recent Activity</p>
+                <h3 className="text-white text-lg font-semibold">
+                  Last student marked: <span className="text-primary">{lastSuccessfullyMarked.roll_no}</span>
+                </h3>
+                <p className="text-white/40 text-xs mt-1">{lastSuccessfullyMarked.name}</p>
+              </div>
+            ) : (
+              <p className="text-white/60 text-sm">Position your face within the frame to mark attendance</p>
+            )}
+          </div>
         </div>
       </div>
     </div>
