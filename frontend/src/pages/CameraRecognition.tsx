@@ -18,7 +18,7 @@ const CameraRecognition = () => {
   const [lastMatch, setLastMatch] = useState<any>(null);
   const [lastSuccessfullyMarked, setLastSuccessfullyMarked] = useState<any>(null);
   const [isCameraReady, setIsCameraReady] = useState(false);
-  const [currentBox, setCurrentBox] = useState<number[] | null>(null);
+  const [detections, setDetections] = useState<any[]>([]);
   const [isRecognized, setIsRecognized] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -49,22 +49,22 @@ const CameraRecognition = () => {
       if (isCameraReady && !recognizing) {
         captureAndRecognize();
       }
-    }, 1500); // Slightly faster interval for real-time feel
+    }, 750); // Faster interval for real-time feel
 
     return () => clearInterval(interval);
   }, [isCameraReady, recognizing]);
 
   // Effect to clear boxes after a short delay
   useEffect(() => {
-    if (currentBox) {
+    if (detections.length > 0) {
       const timer = setTimeout(() => {
-        setCurrentBox(null);
+        setDetections([]);
         setIsRecognized(false);
-        setLastMatch(null); // Face moved away or scan expired
-      }, 1500);
+        // setLastMatch(null); // Don't clear lastMatch here, it's used for the summary UI
+      }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [currentBox]);
+  }, [detections]);
 
   // Effect to draw boxes on canvas
   useEffect(() => {
@@ -77,17 +77,20 @@ const CameraRecognition = () => {
     // Match canvas size to video size
     const video = webcamRef.current.video;
     if (video) {
-      canvas.width = video.clientWidth;
-      canvas.height = video.clientHeight;
+      const { clientWidth, clientHeight, videoWidth, videoHeight } = video;
+      canvas.width = clientWidth;
+      canvas.height = clientHeight;
       
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
-      if (currentBox) {
-        const [x1, y1, x2, y2] = currentBox;
-        
-        // Scale factors: Backend uses the screenshot which is 1280x720 (from videoConstraints)
-        const scaleX = canvas.width / 1280;
-        const scaleY = canvas.height / 720;
+      // Calculate scaling accurately
+      // Backend uses 1280x720 screenshot as per videoConstraints
+      const scaleX = clientWidth / 1280;
+      const scaleY = clientHeight / 720;
+
+      detections.forEach((detection) => {
+        const [x1, y1, x2, y2] = detection.bbox;
+        const match = detection.match;
         
         const scaledX1 = x1 * scaleX;
         const scaledY1 = y1 * scaleY;
@@ -97,23 +100,131 @@ const CameraRecognition = () => {
         const width = scaledX2 - scaledX1;
         const height = scaledY2 - scaledY1;
         
-        ctx.lineWidth = 3;
-        if (isRecognized) {
-          ctx.strokeStyle = '#22c55e'; // Green
-          ctx.strokeRect(scaledX1, scaledY1, width, height);
-          
-          // Only borders, no text or fill as per request
-        } else {
-          ctx.strokeStyle = '#3b82f6'; // Blue
-          ctx.strokeRect(scaledX1, scaledY1, width, height);
-          
-          ctx.fillStyle = '#3b82f6';
-          ctx.font = 'bold 16px sans-serif';
-          ctx.fillText('Detecting...', scaledX1, scaledY1 - 10);
+        // Sublime Design Colors
+        let primaryColor = '#ef4444'; // Red for unknown
+        let statusText = 'Unknown Student';
+        
+        if (match) {
+          if (match.status === "marked_now") {
+            primaryColor = '#22c55e'; // Green
+            statusText = match.name;
+          } else if (match.status === "already_marked") {
+            primaryColor = '#3b82f6'; // Blue
+            statusText = match.name;
+          } else {
+            primaryColor = '#eab308'; // Yellow
+            statusText = match.name;
+          }
         }
-      }
+
+        // 1. Draw Subtle Corner Markers (Sublime Look)
+        ctx.strokeStyle = primaryColor;
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        
+        const cornerSize = Math.min(width, height) * 0.2;
+        
+        // Top Left
+        ctx.beginPath();
+        ctx.moveTo(scaledX1, scaledY1 + cornerSize);
+        ctx.lineTo(scaledX1, scaledY1);
+        ctx.lineTo(scaledX1 + cornerSize, scaledY1);
+        ctx.stroke();
+        
+        // Top Right
+        ctx.beginPath();
+        ctx.moveTo(scaledX2 - cornerSize, scaledY1);
+        ctx.lineTo(scaledX2, scaledY1);
+        ctx.lineTo(scaledX2, scaledY1 + cornerSize);
+        ctx.stroke();
+        
+        // Bottom Left
+        ctx.beginPath();
+        ctx.moveTo(scaledX1, scaledY2 - cornerSize);
+        ctx.lineTo(scaledX1, scaledY2);
+        ctx.lineTo(scaledX1 + cornerSize, scaledY2);
+        ctx.stroke();
+        
+        // Bottom Right
+        ctx.beginPath();
+        ctx.moveTo(scaledX2 - cornerSize, scaledY2);
+        ctx.lineTo(scaledX2, scaledY2);
+        ctx.lineTo(scaledX2, scaledY2 - cornerSize);
+        ctx.stroke();
+
+        // 2. Draw Semi-transparent Fill on hover-like detection
+        ctx.fillStyle = primaryColor;
+        ctx.globalAlpha = 0.05;
+        ctx.fillRect(scaledX1, scaledY1, width, height);
+        ctx.globalAlpha = 1.0;
+
+        // 3. Draw Accurate Label (Sublime Design)
+        if (match) {
+          const labelPadding = 12;
+          const fontSize = 14;
+          ctx.font = `bold ${fontSize}px font-poppins, sans-serif`;
+          
+          const nameText = match.name;
+          const subText = match.roll_no ? `#${match.roll_no}` : '';
+          
+          const nameWidth = ctx.measureText(nameText).width;
+          const subWidth = ctx.measureText(subText).width;
+          const labelWidth = Math.max(nameWidth, subWidth) + (labelPadding * 2);
+          const labelHeight = 45;
+          
+          const labelX = scaledX1 + (width / 2) - (labelWidth / 2);
+          const labelY = scaledY2 + 15;
+
+          // Glassmorphism Label Background
+          ctx.save();
+          ctx.beginPath();
+          const r = 12; // corner radius
+          ctx.moveTo(labelX + r, labelY);
+          ctx.lineTo(labelX + labelWidth - r, labelY);
+          ctx.quadraticCurveTo(labelX + labelWidth, labelY, labelX + labelWidth, labelY + r);
+          ctx.lineTo(labelX + labelWidth, labelY + labelHeight - r);
+          ctx.quadraticCurveTo(labelX + labelWidth, labelY + labelHeight, labelX + labelWidth - r, labelY + labelHeight);
+          ctx.lineTo(labelX + r, labelY + labelHeight);
+          ctx.quadraticCurveTo(labelX, labelY + labelHeight, labelX, labelY + labelHeight - r);
+          ctx.lineTo(labelX, labelY + r);
+          ctx.quadraticCurveTo(labelX, labelY, labelX + r, labelY);
+          ctx.closePath();
+          
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+          ctx.shadowBlur = 15;
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+          ctx.fill();
+          
+          // Bottom Accent Line
+          ctx.strokeStyle = primaryColor;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(labelX + 15, labelY + labelHeight);
+          ctx.lineTo(labelX + labelWidth - 15, labelY + labelHeight);
+          ctx.stroke();
+          ctx.restore();
+
+          // Text Rendering
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillText(nameText, labelX + (labelWidth/2) - (nameWidth/2), labelY + 22);
+          
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+          ctx.font = `500 ${fontSize - 2}px font-poppins, sans-serif`;
+          ctx.fillText(subText, labelX + (labelWidth/2) - (subWidth/2), labelY + 38);
+        } else {
+          // Unknown Student Label
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
+          ctx.font = 'bold 12px sans-serif';
+          const unknownText = 'UNKNOWN';
+          const uWidth = ctx.measureText(unknownText).width;
+          ctx.fillRect(scaledX1 + (width/2) - (uWidth/2) - 8, scaledY1 - 25, uWidth + 16, 20);
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillText(unknownText, scaledX1 + (width/2) - (uWidth/2), scaledY1 - 11);
+        }
+      });
     }
-  }, [currentBox, isRecognized]);
+  }, [detections]);
 
   const checkSession = async () => {
     const { data, error } = await supabase
@@ -152,34 +263,34 @@ const CameraRecognition = () => {
       const result = await response.json();
       
       if (result.status === "success") {
-        if (result.bbox) {
-          setCurrentBox(result.bbox);
-        } else {
-          // If no face detected, let the timeout clear current UI
-        }
+        const currentDetections = result.detections || [];
+        setDetections(currentDetections);
 
-        if (result.matches && result.matches.length > 0) {
-          const match = result.matches[0];
+        // Update the summary UI with the first matched student in this frame
+        const firstMatch = currentDetections.find((d: any) => d.match)?.match;
+        
+        if (firstMatch) {
           setIsRecognized(true);
           
-          if (match.status === "marked_now") {
-            setLastMatch(match);
-            setLastSuccessfullyMarked(match);
-            toast.success(`Marked Present: ${match.name} (${match.roll_no})`, {
+          if (firstMatch.status === "marked_now") {
+            setLastMatch(firstMatch);
+            setLastSuccessfullyMarked(firstMatch);
+            toast.success(`Marked Present: ${firstMatch.name} (${firstMatch.roll_no})`, {
               icon: <UserCheck className="w-5 h-5 text-green-500" />,
               duration: 2000
             });
-          } else if (match.status === "already_marked") {
-            setLastMatch(match);
-            toast.info(`Already Marked: ${match.name} (${match.roll_no})`, {
+          } else if (firstMatch.status === "already_marked") {
+            setLastMatch(firstMatch);
+            toast.info(`Already Marked: ${firstMatch.name} (${firstMatch.roll_no})`, {
               icon: <CheckCircle2 className="w-5 h-5 text-blue-500" />,
               duration: 2000
             });
           } else {
-            setLastMatch(match);
+            setLastMatch(firstMatch);
           }
         } else {
-          setIsRecognized(false);
+          // If no matches in this frame, we don't necessarily clear lastMatch 
+          // because it will be cleared by the timeout effect anyway.
         }
       }
     } catch (error) {

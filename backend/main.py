@@ -177,68 +177,80 @@ async def recognize(session_id: str, file: UploadFile = File(...)):
         if img is None:
             raise HTTPException(status_code=400, detail="Invalid image data")
         
-        # 1. Detection
-        bbox, kps = detector.detect(img)
+        # 1. Detection (All faces)
+        bboxes, kpss = detector.detect(img)
         
-        if bbox is None:
-            # Fallback: if no face detected by SCRFD, we'll try a generous center crop 
-            # for portraits as a last resort, but return a message.
-            h, w = img.shape[:2]
-            s = min(h, w) * 0.8
-            bbox = [float((w-s)/2), float((h-s)/2), float((w+s)/2), float((h+s)/2)]
-            kps = None
-            logger.warning("No face detected by SCRFD, using fallback center crop.")
+        if not bboxes:
+            return {"status": "success", "detections": [], "message": "No faces detected"}
 
-        # 2. Recognition
-        input_embedding = recognizer.get_embedding(img, bbox, kps)
-        if not input_embedding:
-            return {"status": "success", "matches": [], "bbox": bbox, "message": "Face too small or unclear"}
+        # 2. Recognition (Batch)
+        input_embeddings = recognizer.get_embeddings(img, bboxes, kpss)
         
-        matches = []
-        # Stricter threshold for ArcFace with TTA (Test Time Augmentation)
-        # Cosine similarity range is -1 to 1, with TTA, matches are typically > 0.45
-        THRESHOLD = 0.45 
+        THRESHOLD = 0.45
+        detections = []
 
-        for student_id, data in known_embeddings.items():
-            similarity = recognizer.compute_similarity(input_embedding, data["embedding"])
-            # Log similarity for top candidates
-            if similarity > 0.3:
-                logger.info(f"Similarity with {data['name']} ({data['roll_no']}): {similarity:.4f}")
+        for i, input_embedding in enumerate(input_embeddings):
+            matches = []
+            for student_id, data in known_embeddings.items():
+                similarity = recognizer.compute_similarity(input_embedding, data["embedding"])
+                if similarity > THRESHOLD:
+                    matches.append({
+                        "id": student_id, 
+                        "name": data["name"], 
+                        "roll_no": data["roll_no"],
+                        "similarity": float(similarity)
+                    })
             
-            if similarity > THRESHOLD:
-                matches.append({
-                    "id": student_id, 
-                    "name": data["name"], 
-                    "roll_no": data["roll_no"],
-                    "similarity": float(similarity)
-                })
+            matches.sort(key=lambda x: x["similarity"], reverse=True)
+            
+            best_match = None
+            if matches:
+                best_match = matches[0]
+            
+            detections.append({
+                "bbox": bboxes[i],
+                "match": best_match
+            })
 
-        matches.sort(key=lambda x: x["similarity"], reverse=True)
+        # 3. Asynchronous Attendance Marking for all unique best matches
+        to_mark = {}
+        for d in detections:
+            if d["match"]:
+                to_mark[d["match"]["id"]] = d["match"]
 
-        if matches:
-            best_match = matches[0]
+        async def mark_student(student_id, match_info):
             # Check for duplicate attendance
             existing = supabase.table("attendance_records")\
                 .select("*")\
                 .eq("session_id", session_id)\
-                .eq("student_id", best_match["id"])\
+                .eq("student_id", student_id)\
                 .execute()
             
             if not existing.data:
                 supabase.table("attendance_records").insert({
                     "session_id": session_id, 
-                    "student_id": best_match["id"]
+                    "student_id": student_id
                 }).execute()
-                best_match["status"] = "marked_now"
-                logger.info(f"Marked attendance for {best_match['name']} ({best_match['roll_no']})")
+                return "marked_now"
             else:
-                best_match["status"] = "already_marked"
-                logger.info(f"Attendance already marked for {best_match['name']} ({best_match['roll_no']})")
+                return "already_marked"
+
+        # Process marking in parallel
+        import asyncio
+        student_ids = list(to_mark.keys())
+        if student_ids:
+            results = await asyncio.gather(*[mark_student(sid, to_mark[sid]) for sid in student_ids])
+            # Update match info with status
+            for sid, status in zip(student_ids, results):
+                to_mark[sid]["status"] = status
+                # Also update detections array for frontend
+                for d in detections:
+                    if d["match"] and d["match"]["id"] == sid:
+                        d["match"]["status"] = status
 
         return {
             "status": "success", 
-            "matches": matches, 
-            "bbox": bbox
+            "detections": detections
         }
     except Exception as e:
         logger.exception(f"Error recognition in session {session_id}")

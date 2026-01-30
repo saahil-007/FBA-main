@@ -34,9 +34,9 @@ class FaceDetector:
             anchor_centers.append(np.repeat(anchor_grid * stride, 2, axis=0).astype(np.float32))
         return anchor_centers
 
-    def detect(self, img, threshold=0.4):
+    def detect(self, img, threshold=0.4, max_num=10):
         if img is None:
-            return None, None
+            return [], []
             
         h, w = img.shape[:2]
         
@@ -99,6 +99,7 @@ class FaceDetector:
                 for i in range(5):
                     pos_kpss_decoded[:, i*2] = (pos_anchors[:, 0] + pos_kpss[:, i*2]) / det_scale
                     pos_kpss_decoded[:, i*2+1] = (pos_anchors[:, 1] + pos_kpss[:, i*2+1]) / det_scale
+                
                 kpss_all.append(pos_kpss_decoded)
             
             proposals.append(np.stack([x1, y1, x2, y2], axis=-1))
@@ -107,15 +108,13 @@ class FaceDetector:
         if not proposals:
             # Fallback for small faces: try lower threshold
             if threshold > 0.2:
-                return self.detect(img, threshold=0.2)
-            return None, None
+                return self.detect(img, threshold=0.2, max_num=max_num)
+            return [], []
             
         proposals = np.concatenate(proposals, axis=0)
         scores_all = np.concatenate(scores_all, axis=0)
         
         # 3. NMS
-        # cv2.dnn.NMSBoxes expects [x, y, w, h] or [x1, y1, x2, y2] depending on version, 
-        # but usually it's [x, y, w, h]. Let's convert just in case.
         nms_proposals = proposals.copy()
         nms_proposals[:, 2] = nms_proposals[:, 2] - nms_proposals[:, 0] # w
         nms_proposals[:, 3] = nms_proposals[:, 3] - nms_proposals[:, 1] # h
@@ -123,22 +122,25 @@ class FaceDetector:
         indices = cv2.dnn.NMSBoxes(nms_proposals.tolist(), scores_all.tolist(), threshold, 0.4)
         
         if len(indices) == 0:
-            return None, None
+            return [], []
             
         # Handle different OpenCV versions returning different types of indices
-        best_idx = indices[0]
-        if isinstance(best_idx, (list, np.ndarray)):
-            best_idx = best_idx[0]
-            
-        final_box = proposals[best_idx].tolist()
+        if isinstance(indices, np.ndarray):
+            indices = indices.flatten()
         
-        final_kps = None
+        # Limit to max_num
+        indices = indices[:max_num]
+            
+        final_boxes = proposals[indices].tolist()
+        
+        final_kpss = []
         if kpss_all:
             kpss_all = np.concatenate(kpss_all, axis=0)
-            final_kps = kpss_all[best_idx].reshape(5, 2).tolist()
+            for idx in indices:
+                final_kpss.append(kpss_all[idx].reshape(5, 2).tolist())
             
-        logger.info(f"Detected face with confidence: {scores_all[best_idx]:.4f}")
-        return final_box, final_kps
+        logger.info(f"Detected {len(final_boxes)} faces.")
+        return final_boxes, final_kpss
 
     def _nms(self, dets, thresh):
         x1, y1, x2, y2 = dets[:, 0], dets[:, 1], dets[:, 2], dets[:, 3]
