@@ -2,13 +2,13 @@ services:
   # Backend Service (Docker)
   - type: web
     name: fba-backend
-    env: docker
+    runtime: docker
     rootDir: backend
     plan: free
     healthCheckPath: /health
     envVars:
       - key: PORT
-        value: "8000"
+        value: 8000
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_KEY
@@ -17,11 +17,11 @@ services:
   # Frontend Service (Static Site)
   - type: web
     name: fba-frontend
-    env: static
+    runtime: node
     rootDir: frontend
     plan: free
-    staticPublishDir: dist
     buildCommand: npm install && npm run build
+    staticPublishDir: dist
     envVars:
       - key: VITE_API_URL
         sync: false
