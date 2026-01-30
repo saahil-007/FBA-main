@@ -17,11 +17,13 @@ services:
   # Frontend Service (Static Site)
   - type: web
     name: fba-frontend
-    env: static
+    runtime: node
     rootDir: frontend
     plan: free
     buildCommand: npm install && npm run build
-    publishDir: dist
+    startCommand: npm run preview
     envVars:
       - key: VITE_API_URL
         sync: false
+      - key: PORT
+        value: 4173
