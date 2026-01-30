@@ -100,7 +100,8 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 @app.get("/health")
 async def health_check():
     return {
-        "status": "healthy", 
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
         "models_loaded": detector is not None and recognizer is not None,
         "cache_sessions": list(embedding_manager.cache.keys()) if embedding_manager else []
     }
@@ -395,10 +396,6 @@ async def export_session(session_id: str, format: str):
     except Exception as e:
         logger.exception(f"Error exporting session {session_id}")
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 if __name__ == "__main__":
     import uvicorn
