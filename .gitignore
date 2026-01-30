@@ -12,12 +12,6 @@ node_modules/
 jspm_packages/
 typings/
 
-# Build
-dist/
-dist-ssr/
-build/
-*.egg-info/
-.eggs/
 
 # Python
 __pycache__/
