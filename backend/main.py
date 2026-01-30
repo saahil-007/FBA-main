@@ -108,7 +108,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 @app.get("/health")
 async def health_check():
-    # Instant response for Railway healthcheck
+    # Production healthcheck for monitoring systems
     return {"status": "ok", "timestamp": datetime.now().isoformat()}
 
 @app.get("/")

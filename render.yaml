@@ -1,0 +1,30 @@
+services:
+  # Backend Service (Docker with venv)
+  - type: web
+    name: fba-backend
+    env: docker
+    rootDir: backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+
+  # Frontend Service (Static Site)
+  - type: web
+    name: fba-frontend
+    env: static
+    rootDir: frontend
+    plan: free
+    publishDir: dist
+    buildCommand: npm install && npm run build
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          name: fba-backend
+          type: web
+          property: host
