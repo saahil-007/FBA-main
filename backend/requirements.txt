@@ -1,5 +1,6 @@
 fastapi
 uvicorn
+gunicorn
 supabase
 python-dotenv
 huggingface_hub
@@ -13,3 +14,4 @@ python-multipart
 onnxruntime
 pandas
 openpyxl
+fpdf

@@ -3,11 +3,11 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, ArrowLeft, Download, FileText, Table as TableIcon, Users, CheckCircle2 } from "lucide-react";
+import { Loader2, ArrowLeft, FileText, Table as TableIcon, Users, CheckCircle2, Link as LinkIcon, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 
-const API_BASE_URL = "http://localhost:8000";
+import { API_URL } from "@/config";
 
 const SessionDetails = () => {
   const { sessionId } = useParams();
@@ -37,7 +37,7 @@ const SessionDetails = () => {
       setSession(sessionData);
 
       // Fetch attendance from our backend API
-      const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/attendance`);
+      const response = await fetch(`${API_URL}/sessions/${sessionId}/attendance`);
       if (!response.ok) throw new Error("Failed to fetch attendance");
       const attendanceData = await response.json();
       setAttendance(attendanceData);
@@ -52,7 +52,7 @@ const SessionDetails = () => {
   const handleExport = async (format: 'csv' | 'pdf') => {
     try {
       setExporting(format);
-      const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/export/${format}`);
+      const response = await fetch(`${API_URL}/sessions/${sessionId}/export/${format}`);
       if (!response.ok) throw new Error("Export failed");
       
       const blob = await response.blob();
@@ -72,6 +72,16 @@ const SessionDetails = () => {
     } finally {
       setExporting(null);
     }
+  };
+
+  const getShareUrl = (path: string) => {
+    return `${window.location.origin}${path}`;
+  };
+
+  const copyToClipboard = (path: string) => {
+    const url = getShareUrl(path);
+    navigator.clipboard.writeText(url);
+    toast.success("Link copied to clipboard");
   };
 
   if (loading) {
@@ -156,6 +166,26 @@ const SessionDetails = () => {
               <div className="flex justify-between py-2 pt-4">
                 <span className="text-lg font-bold">Total Present</span>
                 <span className="text-2xl font-bold text-primary">{attendance.length}</span>
+              </div>
+              <div className="pt-4 flex gap-2">
+                <a 
+                  href={getShareUrl(`/student/view/${sessionId}`)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 inline-flex items-center justify-center rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 text-xs gap-2"
+                  title="Open in new tab / Right-click for options"
+                >
+                  <LinkIcon className="h-4 w-4" /> Open Student View
+                </a>
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  className="h-9 w-9 shrink-0"
+                  onClick={() => copyToClipboard(`/student/view/${sessionId}`)}
+                  title="Copy link"
+                >
+                  <Share2 className="h-4 w-4" />
+                </Button>
               </div>
             </CardContent>
           </Card>

@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, Camera, X,CheckCircle2, UserCheck } from "lucide-react";
 
-const API_BASE_URL = "http://localhost:8000";
+import { API_URL } from "@/config";
 
 const CameraRecognition = () => {
   const { sessionId } = useParams();
@@ -22,6 +22,7 @@ const CameraRecognition = () => {
   const [isRecognized, setIsRecognized] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
 
   const handleFinish = async () => {
     try {
@@ -255,7 +256,7 @@ const CameraRecognition = () => {
       const formData = new FormData();
       formData.append("file", blob, "capture.jpg");
 
-      const response = await fetch(`http://localhost:8000/recognize/${sessionId}`, {
+      const response = await fetch(`${API_URL}/recognize/${sessionId}`, {
         method: "POST",
         body: formData,
       });
@@ -332,6 +333,20 @@ const CameraRecognition = () => {
 
         {/* Camera Feed Section */}
         <div className="space-y-4">
+          {cameraError && (
+            <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl text-sm text-red-400 space-y-2">
+              <p className="font-bold flex items-center gap-2">
+                <X className="w-4 h-4" /> Camera Access Blocked
+              </p>
+              <p className="text-xs opacity-80">
+                Browsers block camera on HTTP (except localhost). To fix this:
+              </p>
+              <ul className="list-disc list-inside text-[10px] space-y-1 opacity-70">
+                <li>Use HTTPS (e.g., ngrok or deploy the site)</li>
+                <li>On Android Chrome: Go to <code className="bg-black/20 px-1">chrome://flags</code>, search for "unsafely-treat-insecure-origin-as-secure", add your PC's IP, and enable it.</li>
+              </ul>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-medium text-white/60 flex items-center gap-2">
               <Camera className="w-4 h-4" />
@@ -359,7 +374,17 @@ const CameraRecognition = () => {
                     width: 1280,
                     height: 720
                   }}
-                  onUserMedia={() => setIsCameraReady(true)}
+                  onUserMedia={() => {
+                    setIsCameraReady(true);
+                    setCameraError(null);
+                  }}
+                  onUserMediaError={(err) => {
+                    console.error("Camera error:", err);
+                    setCameraError(err.toString());
+                    toast.error("Camera access failed", {
+                      description: "Check if you are on HTTPS or localhost."
+                    });
+                  }}
                   className="w-full h-full object-cover"
                 />
                 <canvas

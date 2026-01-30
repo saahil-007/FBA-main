@@ -3,10 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, ArrowLeft, Calendar, Users, BookOpen, ChevronRight, Search, Filter } from "lucide-react";
+import { Loader2, ArrowLeft, Calendar, BookOpen, ChevronRight, Search, Filter } from "lucide-react";
 import { toast } from "sonner";
 
-const API_BASE_URL = "http://localhost:8000";
+import { API_URL } from "@/config";
 
 const TeacherPastSessions = () => {
   const [sessions, setSessions] = useState<any[]>([]);
@@ -26,7 +26,7 @@ const TeacherPastSessions = () => {
 
   const fetchSessions = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/sessions`);
+      const response = await fetch(`${API_URL}/sessions`);
       if (!response.ok) throw new Error("Failed to fetch sessions");
       const data = await response.json();
       setSessions(data);

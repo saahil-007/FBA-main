@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { Loader2, CheckCircle2, Users, FileText, Table as TableIcon } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-const API_BASE_URL = "http://localhost:8000";
+import { API_URL } from "@/config";
 
 const StudentListView = () => {
   const { sessionId } = useParams();
@@ -83,7 +83,7 @@ const StudentListView = () => {
 
     try {
       setExporting(format);
-      const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/export/${format}`);
+      const response = await fetch(`${API_URL}/sessions/${sessionId}/export/${format}`);
       if (!response.ok) throw new Error("Export failed");
       
       const blob = await response.blob();

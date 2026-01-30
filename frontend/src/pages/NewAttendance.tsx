@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Loader2, Plus, LogOut, User, ArrowLeft } from "lucide-react";
 
+import { API_URL } from "@/config";
+
 const NewAttendance = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -121,7 +123,7 @@ const NewAttendance = () => {
 
       // Call backend to pre-load embeddings
       try {
-        await fetch(`http://localhost:8000/load-session-embeddings/${data.id}`, { method: 'POST' });
+        await fetch(`${API_URL}/load-session-embeddings/${data.id}`, { method: 'POST' });
       } catch (beError) {
         console.error("Backend pre-load failed:", beError);
       }

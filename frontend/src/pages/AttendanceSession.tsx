@@ -5,10 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Loader2, Camera, Users, CheckCircle2, QrCode, Share2, LogOut, ArrowLeft, UserCheck, Download, FileText, Table as TableIcon, RefreshCcw } from "lucide-react";
+import { Loader2, Camera, Users, CheckCircle2, Link as LinkIcon, Share2, ArrowLeft, UserCheck, FileText, Table as TableIcon, RefreshCcw } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-const API_BASE_URL = "http://localhost:8000";
+import { API_URL } from "@/config";
 
 const AttendanceSession = () => {
   const { sessionId } = useParams();
@@ -133,14 +133,18 @@ const AttendanceSession = () => {
     } else {
       toast.success("Session ended and saved");
       // Clear backend cache
-      fetch(`http://localhost:8000/clear-session-cache/${sessionId}`, { method: 'POST' }).catch(console.error);
+      fetch(`${API_URL}/clear-session-cache/${sessionId}`, { method: 'POST' }).catch(console.error);
       // Update local state to show exports immediately
       setSession(prev => ({ ...prev, status: 'completed' }));
     }
   };
 
+  const getShareUrl = (path: string) => {
+    return `${window.location.origin}${path}`;
+  };
+
   const copyToClipboard = (path: string) => {
-    const url = `${window.location.origin}${path}`;
+    const url = getShareUrl(path);
     navigator.clipboard.writeText(url);
     toast.success("Link copied to clipboard");
   };
@@ -148,7 +152,7 @@ const AttendanceSession = () => {
   const handleExport = async (format: 'csv' | 'pdf') => {
     try {
       setExporting(format);
-      const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/export/${format}`);
+      const response = await fetch(`${API_URL}/sessions/${sessionId}/export/${format}`);
       if (!response.ok) throw new Error("Export failed");
       
       const blob = await response.blob();
@@ -245,7 +249,16 @@ const AttendanceSession = () => {
                   <Button className="flex-1" onClick={() => navigate(`/teacher/camera/${sessionId}`)}>
                     Open Camera
                   </Button>
-                  <Button variant="outline" size="icon" onClick={() => copyToClipboard(`/teacher/camera/${sessionId}`)}>
+                  <a 
+                    href={getShareUrl(`/teacher/camera/${sessionId}`)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 w-10 shrink-0"
+                    title="Open in new tab"
+                  >
+                    <LinkIcon className="w-4 h-4" />
+                  </a>
+                  <Button variant="outline" size="icon" onClick={() => copyToClipboard(`/teacher/camera/${sessionId}`)} title="Copy link">
                     <Share2 className="w-4 h-4" />
                   </Button>
                 </div>
@@ -286,7 +299,16 @@ const AttendanceSession = () => {
                 <Button variant="secondary" className="flex-1" onClick={() => navigate(`/student/view/${sessionId}`)}>
                   View List
                 </Button>
-                <Button variant="outline" size="icon" onClick={() => copyToClipboard(`/student/view/${sessionId}`)}>
+                <a 
+                  href={getShareUrl(`/student/view/${sessionId}`)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 w-10 shrink-0"
+                  title="Open in new tab / Right-click for options"
+                >
+                  <LinkIcon className="w-4 h-4" />
+                </a>
+                <Button variant="outline" size="icon" onClick={() => copyToClipboard(`/student/view/${sessionId}`)} title="Copy link">
                   <Share2 className="w-4 h-4" />
                 </Button>
               </div>

@@ -1,12 +1,12 @@
 import os
-import json
 import logging
 import io
+import asyncio
 import pandas as pd
 from datetime import datetime
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
-from typing import List, Dict, Optional
+from typing import List, Optional
 from fpdf import FPDF
 
 import numpy as np
@@ -28,7 +28,6 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
-        logging.FileHandler("backend.log"),
         logging.StreamHandler()
     ]
 )
@@ -41,10 +40,11 @@ detector = None
 recognizer = None
 embedding_manager = None
 
-# HF Repo for models
-HF_REPO = "public-data/insightface"
-DET_MODEL_FILE = "models/buffalo_l/det_10g.onnx"
-REC_MODEL_FILE = "models/buffalo_l/w600k_r50.onnx"
+# Configuration from Environment Variables
+HF_REPO = os.environ.get("HF_REPO")
+DET_MODEL_FILE = os.environ.get("DET_MODEL_FILE")
+REC_MODEL_FILE = os.environ.get("REC_MODEL_FILE")
+RECOGNITION_THRESHOLD = float(os.environ.get("RECOGNITION_THRESHOLD"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -74,9 +74,18 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="FBA Backend", lifespan=lifespan)
 
 # Enable CORS
+# ALLOWED_ORIGINS must be set in the environment variables (comma-separated list)
+# Example: ALLOWED_ORIGINS=http://localhost:5173,https://your-domain.com
+raw_origins = os.environ.get("ALLOWED_ORIGINS")
+if not raw_origins:
+    logger.error("ALLOWED_ORIGINS not found in environment variables.")
+    raise RuntimeError("Missing ALLOWED_ORIGINS configuration")
+
+allowed_origins = raw_origins.split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -118,6 +127,9 @@ async def create_session(request: SessionCreate):
 
     try:
         # 1. Insert session into Supabase
+        # Note: The schema for attendance_sessions might require class_id instead of branch/year/division
+        # We'll need to find the class_id first or ensure the table supports these fields.
+        # Based on previous investigation, the table is likely 'attendance_sessions'.
         session_data = {
             "branch": request.branch,
             "year": request.year,
@@ -186,14 +198,13 @@ async def recognize(session_id: str, file: UploadFile = File(...)):
         # 2. Recognition (Batch)
         input_embeddings = recognizer.get_embeddings(img, bboxes, kpss)
         
-        THRESHOLD = 0.45
         detections = []
 
         for i, input_embedding in enumerate(input_embeddings):
             matches = []
             for student_id, data in known_embeddings.items():
                 similarity = recognizer.compute_similarity(input_embedding, data["embedding"])
-                if similarity > THRESHOLD:
+                if similarity > RECOGNITION_THRESHOLD:
                     matches.append({
                         "id": student_id, 
                         "name": data["name"], 
@@ -219,24 +230,28 @@ async def recognize(session_id: str, file: UploadFile = File(...)):
                 to_mark[d["match"]["id"]] = d["match"]
 
         async def mark_student(student_id, match_info):
-            # Check for duplicate attendance
-            existing = supabase.table("attendance_records")\
-                .select("*")\
-                .eq("session_id", session_id)\
-                .eq("student_id", student_id)\
-                .execute()
-            
-            if not existing.data:
-                supabase.table("attendance_records").insert({
-                    "session_id": session_id, 
-                    "student_id": student_id
-                }).execute()
-                return "marked_now"
-            else:
-                return "already_marked"
+            try:
+                # 1. Check if already marked in this session
+                check_resp = supabase.table("attendance_records")\
+                    .select("id")\
+                    .eq("session_id", session_id)\
+                    .eq("student_id", student_id)\
+                    .execute()
+                
+                if check_resp.data:
+                    return "already_marked"
 
-        # Process marking in parallel
-        import asyncio
+                # 2. Mark attendance
+                insert_data = {
+                    "session_id": session_id,
+                    "student_id": student_id
+                }
+                mark_resp = supabase.table("attendance_records").insert(insert_data).execute()
+                return "marked"
+            except Exception as e:
+                logger.error(f"Failed to mark student {student_id}: {e}")
+                return "error"
+
         student_ids = list(to_mark.keys())
         if student_ids:
             results = await asyncio.gather(*[mark_student(sid, to_mark[sid]) for sid in student_ids])
@@ -387,4 +402,5 @@ async def export_session(session_id: str, format: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    port = int(os.environ.get("PORT"))
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")

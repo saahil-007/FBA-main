@@ -1,0 +1,13 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "services": {
+    "fba-backend": {
+      "source": "backend",
+      "watch": true
+    },
+    "fba-frontend": {
+      "source": "frontend",
+      "watch": true
+    }
+  }
+}

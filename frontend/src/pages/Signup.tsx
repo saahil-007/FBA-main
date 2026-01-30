@@ -4,7 +4,7 @@ import NeuralBackground from "@/components/ui/flow-field-background";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, Check, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Check, Loader2, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 
