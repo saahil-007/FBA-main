@@ -17,11 +17,11 @@ services:
   # Frontend Service (Static Site)
   - type: web
     name: fba-frontend
-    runtime: node
+    env: static
     rootDir: frontend
     plan: free
     buildCommand: npm install && npm run build
-    staticPublishDir: dist
+    publishDir: dist
     envVars:
       - key: VITE_API_URL
         sync: false
