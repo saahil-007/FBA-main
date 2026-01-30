@@ -52,7 +52,9 @@ async def lifespan(app: FastAPI):
     logger.info("Starting FBA Backend...")
     
     # Start model loading in the background so the server can start immediately
-    asyncio.create_task(initialize_services())
+    logger.info("Scheduling background initialization...")
+    loop = asyncio.get_event_loop()
+    loop.call_later(1, lambda: asyncio.create_task(initialize_services()))
     
     yield
     # Shutdown logic
@@ -106,7 +108,8 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    # Instant response for Railway healthcheck
+    return {"status": "ok", "timestamp": datetime.now().isoformat()}
 
 @app.get("/")
 async def root():
