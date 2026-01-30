@@ -400,6 +400,10 @@ async def export_session(session_id: str, format: str):
         logger.exception(f"Error exporting session {session_id}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT"))

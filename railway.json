@@ -3,7 +3,8 @@
   "services": {
     "fba-backend": {
       "source": "backend",
-      "watch": true
+      "watch": true,
+      "healthcheck": "/health"
     },
     "fba-frontend": {
       "source": "frontend",
