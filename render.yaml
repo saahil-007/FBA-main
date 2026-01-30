@@ -15,12 +15,12 @@ services:
         sync: false
 
   # Frontend Service (Static Site)
-  - type: static
+  - type: web
     name: fba-frontend
     env: static
     rootDir: frontend
     plan: free
-    publishDir: dist
+    staticPublishDir: dist
     buildCommand: npm install && npm run build
     envVars:
       - key: VITE_API_URL
