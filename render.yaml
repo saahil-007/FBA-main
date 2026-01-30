@@ -1,5 +1,5 @@
 services:
-  # Backend Service (Docker with venv)
+  # Backend Service (Docker)
   - type: web
     name: fba-backend
     env: docker
@@ -8,14 +8,14 @@ services:
     healthCheckPath: /health
     envVars:
       - key: PORT
-        value: 8000
+        value: "8000"
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_KEY
         sync: false
 
   # Frontend Service (Static Site)
-  - type: web
+  - type: static
     name: fba-frontend
     env: static
     rootDir: frontend
