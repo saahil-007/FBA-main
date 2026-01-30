@@ -49,27 +49,34 @@ RECOGNITION_THRESHOLD = float(os.environ.get("RECOGNITION_THRESHOLD"))
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global detector, recognizer, embedding_manager
-    logger.info("Starting FBA Backend with Modular Services...")
+    logger.info("Starting FBA Backend...")
     
+    # Start model loading in the background so the server can start immediately
+    asyncio.create_task(initialize_services())
+    
+    yield
+    # Shutdown logic
+    logger.info("Shutting down FBA Backend...")
+    if embedding_manager:
+        embedding_manager.clear_cache()
+
+async def initialize_services():
+    global detector, recognizer, embedding_manager
     try:
-        logger.info(f"Downloading models from HF: {HF_REPO}...")
-        det_path = hf_hub_download(repo_id=HF_REPO, filename=DET_MODEL_FILE)
-        rec_path = hf_hub_download(repo_id=HF_REPO, filename=REC_MODEL_FILE)
+        logger.info(f"Downloading models from HF: {HF_REPO} in background...")
+        # Use run_in_executor for sync hf_hub_download
+        loop = asyncio.get_event_loop()
+        det_path = await loop.run_in_executor(None, lambda: hf_hub_download(repo_id=HF_REPO, filename=DET_MODEL_FILE))
+        rec_path = await loop.run_in_executor(None, lambda: hf_hub_download(repo_id=HF_REPO, filename=REC_MODEL_FILE))
         
         # Initialize services
         detector = FaceDetector(det_path)
         recognizer = FaceRecognizer(rec_path)
         embedding_manager = EmbeddingManager(supabase)
         
-        logger.info("All services initialized successfully.")
+        logger.info("All services initialized successfully in background.")
     except Exception as e:
-        logger.error(f"Failed to initialize services: {e}")
-        
-    yield
-    # Shutdown logic
-    logger.info("Shutting down FBA Backend...")
-    if embedding_manager:
-        embedding_manager.clear_cache()
+        logger.error(f"Failed to initialize services in background: {e}")
 
 app = FastAPI(title="FBA Backend", lifespan=lifespan)
 
