@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["python311", "libglvnd", "glib"]
+nixPkgs = ["python311", "libglvnd", "glib", "xorg.libxcb", "xorg.libX11", "xorg.libXext", "xorg.libSM", "xorg.libICE", "libxcrypt"]
 
 [start]
 cmd = "python main.py"
