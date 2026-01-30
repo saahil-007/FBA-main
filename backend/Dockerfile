@@ -39,4 +39,5 @@ USER appuser
 EXPOSE 8000
 
 # Start the application using gunicorn with uvicorn workers for production performance
-CMD ["gunicorn", "main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
+# We use the PORT environment variable provided by Render, defaulting to 8000
+CMD ["sh", "-c", "gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT:-8000}"]

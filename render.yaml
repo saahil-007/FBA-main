@@ -15,16 +15,11 @@ services:
         sync: false
 
   # Frontend Service (Static Site)
-  - type: web
+  - type: static_site
     name: fba-frontend
-    env: static
     rootDir: frontend
-    plan: free
     publishDir: dist
     buildCommand: npm install && npm run build
     envVars:
       - key: VITE_API_URL
-        fromService:
-          name: fba-backend
-          type: web
-          property: host
+        sync: false # User will provide the backend URL after it's created
