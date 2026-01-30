@@ -11,6 +11,11 @@ export default defineConfig(({ mode }) => ({
       overlay: false,
     },
   },
+  preview: {
+    host: true,
+    port: 4173,
+    allowedHosts: true,
+  },
   plugins: [react()],
   resolve: {
     alias: {
