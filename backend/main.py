@@ -76,11 +76,7 @@ app = FastAPI(title="FBA Backend", lifespan=lifespan)
 # Enable CORS
 # ALLOWED_ORIGINS must be set in the environment variables (comma-separated list)
 # Example: ALLOWED_ORIGINS=http://localhost:5173,https://your-domain.com
-raw_origins = os.environ.get("ALLOWED_ORIGINS")
-if not raw_origins:
-    logger.error("ALLOWED_ORIGINS not found in environment variables.")
-    raise RuntimeError("Missing ALLOWED_ORIGINS configuration")
-
+raw_origins = os.environ.get("ALLOWED_ORIGINS", "*")
 allowed_origins = raw_origins.split(",")
 
 app.add_middleware(
