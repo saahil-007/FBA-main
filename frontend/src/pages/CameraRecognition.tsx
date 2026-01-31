@@ -228,17 +228,34 @@ const CameraRecognition = () => {
   }, [detections]);
 
   const checkSession = async () => {
-    const { data, error } = await supabase
-      .from("sessions")
-      .select("status")
-      .eq("id", sessionId)
-      .single();
+    try {
+      // 1. Check if session is active via Supabase
+      const { data, error } = await supabase
+        .from("sessions")
+        .select("status")
+        .eq("id", sessionId)
+        .single();
 
-    if (error || !data || data.status !== 'active') {
-      toast.error("Session is not active or not found");
-      navigate("/dashboard");
-      return;
+      if (error || !data || data.status !== 'active') {
+        toast.error("Session is not active or not found");
+        navigate("/dashboard");
+        return;
+      }
+
+      // 2. Check device access via Backend (First device wins)
+      const accessRes = await fetch(`${API_URL}/sessions/${sessionId}/check-access`);
+      if (accessRes.ok) {
+        const accessData = await accessRes.json();
+        if (accessData.status === 'denied') {
+          toast.error(accessData.message);
+          navigate("/dashboard");
+          return;
+        }
+      }
+    } catch (err) {
+      console.error("Error checking session/access:", err);
     }
+    
     setLoading(false);
   };
 
@@ -260,6 +277,13 @@ const CameraRecognition = () => {
         method: "POST",
         body: formData,
       });
+
+      if (response.status === 403) {
+        const errorData = await response.json();
+        toast.error(errorData.detail || "Access denied");
+        navigate("/dashboard");
+        return;
+      }
 
       const result = await response.json();
       

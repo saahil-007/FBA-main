@@ -11,7 +11,7 @@ from fpdf import FPDF
 
 import numpy as np
 import cv2
-from fastapi import FastAPI, UploadFile, File, HTTPException, Response
+from fastapi import FastAPI, UploadFile, File, HTTPException, Response, Request
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
@@ -41,10 +41,12 @@ recognizer = None
 embedding_manager = None
 
 # Configuration from Environment Variables
-HF_REPO = os.environ.get("HF_REPO")
-DET_MODEL_FILE = os.environ.get("DET_MODEL_FILE")
-REC_MODEL_FILE = os.environ.get("REC_MODEL_FILE")
-RECOGNITION_THRESHOLD = float(os.environ.get("RECOGNITION_THRESHOLD"))
+# Using immich-app/buffalo_s for reliable small models
+HF_REPO = os.environ.get("HF_REPO", "immich-app/buffalo_s")
+# Explicitly default to buffalo_s models for memory optimization
+DET_MODEL_FILE = os.environ.get("DET_MODEL_FILE", "detection/model.onnx")
+REC_MODEL_FILE = os.environ.get("REC_MODEL_FILE", "recognition/model.onnx")
+RECOGNITION_THRESHOLD = float(os.environ.get("RECOGNITION_THRESHOLD", "0.45"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -65,16 +67,28 @@ async def lifespan(app: FastAPI):
 async def initialize_services():
     global detector, recognizer, embedding_manager
     try:
+        # Log the actual model files being used
+        logger.info(f"Background initialization starting with models: {DET_MODEL_FILE} and {REC_MODEL_FILE}")
         logger.info(f"Downloading models from HF: {HF_REPO} in background...")
         # Use run_in_executor for sync hf_hub_download
         loop = asyncio.get_event_loop()
-        det_path = await loop.run_in_executor(None, lambda: hf_hub_download(repo_id=HF_REPO, filename=DET_MODEL_FILE))
-        rec_path = await loop.run_in_executor(None, lambda: hf_hub_download(repo_id=HF_REPO, filename=REC_MODEL_FILE))
         
-        # Initialize services
+        # Download sequentially to avoid memory spike
+        det_path = await loop.run_in_executor(None, lambda: hf_hub_download(repo_id=HF_REPO, filename=DET_MODEL_FILE))
+        logger.info("Detector model downloaded.")
+        
+        rec_path = await loop.run_in_executor(None, lambda: hf_hub_download(repo_id=HF_REPO, filename=REC_MODEL_FILE))
+        logger.info("Recognizer model downloaded.")
+        
+        # Initialize services one by one
         detector = FaceDetector(det_path)
+        logger.info("Detector initialized.")
+        
         recognizer = FaceRecognizer(rec_path)
+        logger.info("Recognizer initialized.")
+        
         embedding_manager = EmbeddingManager(supabase)
+        logger.info("Embedding manager initialized.")
         
         logger.info("All services initialized successfully in background.")
     except Exception as e:
@@ -175,10 +189,60 @@ async def load_session_embeddings(session_id: str):
     
     return {"status": "success", "count": len(embeddings)}
 
+@app.get("/sessions/{session_id}/check-access")
+async def check_access(session_id: str, request: Request):
+    """Check if the current device is allowed to access this session (First device wins)"""
+    user_agent = request.headers.get("user-agent", "unknown")
+    client_ip = request.client.host if request.client else "unknown"
+    fingerprint = f"{user_agent}|{client_ip}"
+    
+    try:
+        # Use 'teacher_signature' column as the 'device_lock' storage
+        session_resp = supabase.table("sessions").select("teacher_signature").eq("id", session_id).execute()
+        if not session_resp.data:
+            raise HTTPException(status_code=404, detail="Session not found")
+            
+        locked_device = session_resp.data[0].get("teacher_signature")
+        
+        # If no device has claimed it yet, or it's the same device
+        if not locked_device:
+            # Claim it
+            supabase.table("sessions").update({"teacher_signature": fingerprint}).eq("id", session_id).execute()
+            return {"status": "allowed", "message": "Device registered for this session"}
+            
+        if locked_device == fingerprint:
+            return {"status": "allowed"}
+        else:
+            return {"status": "denied", "message": "This camera link is already active on another device."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error checking access for session {session_id}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/recognize/{session_id}")
-async def recognize(session_id: str, file: UploadFile = File(...)):
+async def recognize(session_id: str, request: Request, file: UploadFile = File(...)):
     if not recognizer or not detector or not embedding_manager:
         raise HTTPException(status_code=503, detail="Services not initialized")
+
+    # Double check device lock during recognition
+    user_agent = request.headers.get("user-agent", "unknown")
+    client_ip = request.client.host if request.client else "unknown"
+    fingerprint = f"{user_agent}|{client_ip}"
+    
+    try:
+        session_resp = supabase.table("sessions").select("teacher_signature").eq("id", session_id).execute()
+        if session_resp.data:
+            locked_device = session_resp.data[0].get("teacher_signature")
+            if locked_device and locked_device != fingerprint:
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Access denied: This session is locked to another device."
+                )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error checking device lock for session {session_id}: {e}")
 
     # Load cache if missing
     known_embeddings = embedding_manager.get_session_embeddings(session_id)

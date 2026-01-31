@@ -7,9 +7,12 @@ logger = logging.getLogger("FBA-Backend.Recognizer")
 
 class FaceRecognizer:
     def __init__(self, model_path: str):
-        # Optimize ONNX Runtime session
+        # Optimize ONNX Runtime session for low memory
         sess_options = ort.SessionOptions()
-        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
+        sess_options.intra_op_num_threads = 1
+        sess_options.inter_op_num_threads = 1
+        sess_options.enable_cpu_mem_access_optimization = True
         
         # Check for available providers
         available_providers = ort.get_available_providers()
