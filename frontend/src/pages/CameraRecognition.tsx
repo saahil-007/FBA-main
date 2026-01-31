@@ -23,28 +23,6 @@ const CameraRecognition = () => {
   const [isCameraActive, setIsCameraActive] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [accessDenied, setAccessDenied] = useState<{message: string} | null>(null);
-
-  const handleResetAccess = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch(`${API_URL}/sessions/${sessionId}/reset-access`, {
-        method: 'POST'
-      });
-      if (res.ok) {
-        toast.success("Access reset successfully. Retrying...");
-        setAccessDenied(null);
-        await checkSession();
-      } else {
-        toast.error("Failed to reset access");
-      }
-    } catch (err) {
-      console.error("Error resetting access:", err);
-      toast.error("An error occurred");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleFinish = async () => {
     try {
@@ -251,31 +229,20 @@ const CameraRecognition = () => {
 
   const checkSession = async () => {
     try {
-      // 1. Check if session is active via Supabase
-      const { data, error } = await supabase
-        .from("sessions")
-        .select("status")
-        .eq("id", sessionId)
-        .single();
-
-      if (error || !data || data.status !== 'active') {
-        toast.error("Session is not active or not found");
-        navigate("/dashboard");
-        return;
-      }
-
-      // 2. Check device access via Backend (First device wins)
+      // Check if session is active via Backend (Lock removed)
       const accessRes = await fetch(`${API_URL}/sessions/${sessionId}/check-access`);
       if (accessRes.ok) {
         const accessData = await accessRes.json();
         if (accessData.status === 'denied') {
-          setAccessDenied({ message: accessData.message });
-          setLoading(false);
+          toast.error(accessData.message);
+          navigate("/dashboard");
           return;
         }
+      } else {
+        toast.error("Session not found or server error");
+        navigate("/dashboard");
+        return;
       }
-      
-      setAccessDenied(null);
     } catch (err) {
       console.error("Error checking session/access:", err);
     }
@@ -353,38 +320,6 @@ const CameraRecognition = () => {
     return (
       <div className="min-h-screen flex items-center justify-center bg-black">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  if (accessDenied) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0F0F10] p-6">
-        <Card className="max-w-md w-full bg-card/10 backdrop-blur-xl border-red-500/20 p-8 text-center space-y-6">
-          <div className="mx-auto w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center">
-            <X className="w-8 h-8 text-red-500" />
-          </div>
-          <div className="space-y-2">
-            <h2 className="text-xl font-bold text-white">Access Denied</h2>
-            <p className="text-white/60">{accessDenied.message}</p>
-          </div>
-          <div className="pt-4 flex flex-col gap-3">
-            <Button 
-              variant="default" 
-              className="bg-primary hover:bg-primary/90"
-              onClick={handleResetAccess}
-            >
-              Reset Device Lock
-            </Button>
-            <Button 
-              variant="ghost" 
-              className="text-white/60 hover:text-white"
-              onClick={() => navigate("/dashboard")}
-            >
-              Back to Dashboard
-            </Button>
-          </div>
-        </Card>
       </div>
     );
   }

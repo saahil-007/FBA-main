@@ -41,11 +41,10 @@ recognizer = None
 embedding_manager = None
 
 # Configuration from Environment Variables
-# Using immich-app/buffalo_s for reliable small models
-HF_REPO = os.environ.get("HF_REPO")
-# Explicitly default to buffalo_s models for memory optimization
-DET_MODEL_FILE = os.environ.get("DET_MODEL_FILE")
-REC_MODEL_FILE = os.environ.get("REC_MODEL_FILE")
+# Using high-accuracy models from public-data/insightface
+HF_REPO = os.environ.get("HF_REPO", "public-data/insightface")
+DET_MODEL_FILE = os.environ.get("DET_MODEL_FILE", "models/buffalo_l/det_10g.onnx")
+REC_MODEL_FILE = os.environ.get("REC_MODEL_FILE", "models/buffalo_l/w600k_r50.onnx")
 RECOGNITION_THRESHOLD = float(os.environ.get("RECOGNITION_THRESHOLD", "0.45"))
 
 @asynccontextmanager
@@ -191,29 +190,17 @@ async def load_session_embeddings(session_id: str):
 
 @app.get("/sessions/{session_id}/check-access")
 async def check_access(session_id: str, request: Request):
-    """Check if the current device is allowed to access this session (First device wins)"""
-    user_agent = request.headers.get("user-agent", "unknown")
-    client_ip = request.client.host if request.client else "unknown"
-    fingerprint = f"{user_agent}|{client_ip}"
-    
+    """Simplified access check (Device lock removed)"""
     try:
-        # Use 'teacher_signature' column as the 'device_lock' storage
-        session_resp = supabase.table("sessions").select("teacher_signature").eq("id", session_id).execute()
+        session_resp = supabase.table("sessions").select("status").eq("id", session_id).execute()
         if not session_resp.data:
             raise HTTPException(status_code=404, detail="Session not found")
             
-        locked_device = session_resp.data[0].get("teacher_signature")
-        
-        # If no device has claimed it yet, or it's the same device
-        if not locked_device:
-            # Claim it
-            supabase.table("sessions").update({"teacher_signature": fingerprint}).eq("id", session_id).execute()
-            return {"status": "allowed", "message": "Device registered for this session"}
+        status = session_resp.data[0].get("status")
+        if status != "active":
+            return {"status": "denied", "message": "Session is no longer active."}
             
-        if locked_device == fingerprint:
-            return {"status": "allowed"}
-        else:
-            return {"status": "denied", "message": "This camera link is already active on another device."}
+        return {"status": "allowed"}
     except HTTPException:
         raise
     except Exception as e:
@@ -224,26 +211,9 @@ async def check_access(session_id: str, request: Request):
 async def recognize(session_id: str, request: Request, file: UploadFile = File(...)):
     if not recognizer or not detector or not embedding_manager:
         raise HTTPException(status_code=503, detail="Services not initialized")
-
-    # Double check device lock during recognition
-    user_agent = request.headers.get("user-agent", "unknown")
-    client_ip = request.client.host if request.client else "unknown"
-    fingerprint = f"{user_agent}|{client_ip}"
     
-    try:
-        session_resp = supabase.table("sessions").select("teacher_signature").eq("id", session_id).execute()
-        if session_resp.data:
-            locked_device = session_resp.data[0].get("teacher_signature")
-            if locked_device and locked_device != fingerprint:
-                raise HTTPException(
-                    status_code=403, 
-                    detail="Access denied: This session is locked to another device."
-                )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error checking device lock for session {session_id}: {e}")
-
+    # Device lock check removed as per request
+    
     # Load cache if missing
     known_embeddings = embedding_manager.get_session_embeddings(session_id)
     if known_embeddings is None:

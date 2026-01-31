@@ -30,25 +30,30 @@ FBA/
 └── README.md
 ```
 
-## ⚙️ Production Deployment (Railway)
+## ⚙️ Production Deployment (Recommended)
 
-### 1. Backend Deployment
-- Create a new service on Railway from your GitHub repo.
-- Set the **Root Directory** to `backend`.
-- Add the following Environment Variables:
+### 1. Backend Deployment (Railway)
+- **Service Type**: Docker or Python.
+- **Root Directory**: `backend`.
+- **Environment Variables**:
   - `SUPABASE_URL`: Your Supabase Project URL.
   - `SUPABASE_KEY`: Your Supabase Anon/Service Key.
-  - `ALLOWED_ORIGINS`: Your frontend URL (e.g., `https://your-app.up.railway.app`).
-- Railway will automatically detect the `Procfile` and `requirements.txt`.
+  - `HF_REPO`: `public-data/insightface` (Standard High-Accuracy Model).
+  - `DET_MODEL_FILE`: `models/buffalo_l/det_10g.onnx`.
+  - `REC_MODEL_FILE`: `models/buffalo_l/w600k_r50.onnx`.
+  - `ALLOWED_ORIGINS`: Your frontend URL (e.g., `https://fba-frontend.vercel.app`).
+- **Optimization**: Railway is recommended for the backend as these larger models require more memory (approx 1GB+ RAM) during initialization. Ensure your Railway plan has sufficient memory.
 
-### 2. Frontend Deployment
-- Create another service on Railway.
-- Set the **Root Directory** to `frontend`.
-- Add the following Environment Variables:
+### 2. Frontend Deployment (Vercel)
+- **Framework Preset**: Vite.
+- **Root Directory**: `frontend`.
+- **Environment Variables**:
   - `VITE_SUPABASE_URL`: Your Supabase Project URL.
   - `VITE_SUPABASE_ANON_KEY`: Your Supabase Anon Key.
-  - `VITE_API_URL`: Your backend service URL (e.g., `https://your-backend.up.railway.app`).
-- Railway will detect the Vite project and build it automatically.
+  - `VITE_API_URL`: Your backend service URL (e.g., `https://fba-backend.up.railway.app`).
+- **Optimization**: Vercel is the best choice for hosting Vite-based static sites due to its edge network and speed.
+
+---
 
 ## 🛠️ Local Development
 
