@@ -42,10 +42,10 @@ embedding_manager = None
 
 # Configuration from Environment Variables
 # Using immich-app/buffalo_s for reliable small models
-HF_REPO = os.environ.get("HF_REPO", "immich-app/buffalo_s")
+HF_REPO = os.environ.get("HF_REPO")
 # Explicitly default to buffalo_s models for memory optimization
-DET_MODEL_FILE = os.environ.get("DET_MODEL_FILE", "detection/model.onnx")
-REC_MODEL_FILE = os.environ.get("REC_MODEL_FILE", "recognition/model.onnx")
+DET_MODEL_FILE = os.environ.get("DET_MODEL_FILE")
+REC_MODEL_FILE = os.environ.get("REC_MODEL_FILE")
 RECOGNITION_THRESHOLD = float(os.environ.get("RECOGNITION_THRESHOLD", "0.45"))
 
 @asynccontextmanager
@@ -193,14 +193,7 @@ async def load_session_embeddings(session_id: str):
 async def check_access(session_id: str, request: Request):
     """Check if the current device is allowed to access this session (First device wins)"""
     user_agent = request.headers.get("user-agent", "unknown")
-    
-    # Get real client IP behind Render proxy
-    x_forwarded_for = request.headers.get("x-forwarded-for")
-    if x_forwarded_for:
-        client_ip = x_forwarded_for.split(",")[0].strip()
-    else:
-        client_ip = request.client.host if request.client else "unknown"
-        
+    client_ip = request.client.host if request.client else "unknown"
     fingerprint = f"{user_agent}|{client_ip}"
     
     try:
@@ -211,13 +204,10 @@ async def check_access(session_id: str, request: Request):
             
         locked_device = session_resp.data[0].get("teacher_signature")
         
-        logger.info(f"Access check for session {session_id}. Current: {fingerprint}, Locked: {locked_device}")
-        
         # If no device has claimed it yet, or it's the same device
         if not locked_device:
             # Claim it
             supabase.table("sessions").update({"teacher_signature": fingerprint}).eq("id", session_id).execute()
-            logger.info(f"Session {session_id} locked to device: {fingerprint}")
             return {"status": "allowed", "message": "Device registered for this session"}
             
         if locked_device == fingerprint:
@@ -228,17 +218,6 @@ async def check_access(session_id: str, request: Request):
         raise
     except Exception as e:
         logger.exception(f"Error checking access for session {session_id}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/sessions/{session_id}/reset-access")
-async def reset_access(session_id: str):
-    """Manually clear the device lock for a session"""
-    try:
-        supabase.table("sessions").update({"teacher_signature": None}).eq("id", session_id).execute()
-        logger.info(f"Access reset for session {session_id}")
-        return {"status": "success", "message": "Device lock cleared"}
-    except Exception as e:
-        logger.exception(f"Error resetting access for session {session_id}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/recognize/{session_id}")
