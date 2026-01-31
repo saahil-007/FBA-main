@@ -39,21 +39,31 @@ load_dotenv()
 detector = None
 recognizer = None
 embedding_manager = None
+init_error = None
+init_status = "pending"
 
 # Configuration from Environment Variables
 # Using high-accuracy models from public-data/insightface
-HF_REPO = os.environ.get("HF_REPO", "public-data/insightface").strip()
-DET_MODEL_FILE = os.environ.get("DET_MODEL_FILE", "models/buffalo_l/det_10g.onnx").strip()
-REC_MODEL_FILE = os.environ.get("REC_MODEL_FILE", "models/buffalo_l/w600k_r50.onnx").strip()
+def clean_env(key, default=None):
+    val = os.environ.get(key, default)
+    if val:
+        # Remove newlines, carriage returns, and leading/trailing whitespace
+        return val.replace('\n', '').replace('\r', '').strip()
+    return val
+
+HF_REPO = clean_env("HF_REPO", "public-data/insightface")
+DET_MODEL_FILE = clean_env("DET_MODEL_FILE", "models/buffalo_l/det_10g.onnx")
+REC_MODEL_FILE = clean_env("REC_MODEL_FILE", "models/buffalo_l/w600k_r50.onnx")
 RECOGNITION_THRESHOLD = float(os.environ.get("RECOGNITION_THRESHOLD", "0.45"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global detector, recognizer, embedding_manager
+    global detector, recognizer, embedding_manager, init_status
     logger.info("Starting FBA Backend...")
     
     # Start model loading in the background so the server can start immediately
     logger.info("Scheduling background initialization...")
+    init_status = "initializing"
     loop = asyncio.get_event_loop()
     loop.call_later(1, lambda: asyncio.create_task(initialize_services()))
     
@@ -64,20 +74,28 @@ async def lifespan(app: FastAPI):
         embedding_manager.clear_cache()
 
 async def initialize_services():
-    global detector, recognizer, embedding_manager
+    global detector, recognizer, embedding_manager, init_error, init_status
     try:
         # Log the actual model files being used
-        logger.info(f"Background initialization starting with models: {DET_MODEL_FILE} and {REC_MODEL_FILE}")
-        logger.info(f"Downloading models from HF: {HF_REPO} in background...")
+        logger.info(f"Background initialization starting with models: '{DET_MODEL_FILE}' and '{REC_MODEL_FILE}'")
+        logger.info(f"Downloading models from HF: '{HF_REPO}' in background...")
         # Use run_in_executor for sync hf_hub_download
         loop = asyncio.get_event_loop()
         
         # Download sequentially to avoid memory spike
-        det_path = await loop.run_in_executor(None, lambda: hf_hub_download(repo_id=HF_REPO, filename=DET_MODEL_FILE))
-        logger.info("Detector model downloaded.")
-        
-        rec_path = await loop.run_in_executor(None, lambda: hf_hub_download(repo_id=HF_REPO, filename=REC_MODEL_FILE))
-        logger.info("Recognizer model downloaded.")
+        try:
+            det_path = await loop.run_in_executor(None, lambda: hf_hub_download(repo_id=HF_REPO, filename=DET_MODEL_FILE))
+            logger.info(f"Detector model downloaded to: {det_path}")
+        except Exception as e:
+            logger.error(f"Failed to download detector model: {e}")
+            raise
+
+        try:
+            rec_path = await loop.run_in_executor(None, lambda: hf_hub_download(repo_id=HF_REPO, filename=REC_MODEL_FILE))
+            logger.info(f"Recognizer model downloaded to: {rec_path}")
+        except Exception as e:
+            logger.error(f"Failed to download recognizer model: {e}")
+            raise
         
         # Initialize services one by one
         detector = FaceDetector(det_path)
@@ -89,8 +107,11 @@ async def initialize_services():
         embedding_manager = EmbeddingManager(supabase)
         logger.info("Embedding manager initialized.")
         
+        init_status = "ready"
         logger.info("All services initialized successfully in background.")
     except Exception as e:
+        init_status = "error"
+        init_error = str(e)
         logger.error(f"Failed to initialize services in background: {e}")
 
 app = FastAPI(title="FBA Backend", lifespan=lifespan)
@@ -99,7 +120,7 @@ app = FastAPI(title="FBA Backend", lifespan=lifespan)
 # ALLOWED_ORIGINS must be set in the environment variables (comma-separated list)
 # Example: ALLOWED_ORIGINS=http://localhost:5173,https://your-domain.com
 raw_origins = os.environ.get("ALLOWED_ORIGINS", "*")
-allowed_origins = raw_origins.split(",")
+allowed_origins = [o.strip() for o in raw_origins.split(",")]
 
 app.add_middleware(
     CORSMiddleware,
@@ -122,7 +143,20 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 @app.get("/health")
 async def health_check():
     # Production healthcheck for monitoring systems
-    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+    return {
+        "status": "ok", 
+        "init_status": init_status,
+        "init_error": init_error,
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.post("/retry-init")
+async def retry_init():
+    global init_status
+    if init_status in ["error", "pending"]:
+        asyncio.create_task(initialize_services())
+        return {"message": "Initialization retrying..."}
+    return {"message": f"Initialization status is {init_status}"}
 
 @app.get("/")
 async def root():
@@ -142,7 +176,14 @@ async def create_session(request: SessionCreate):
     2. Instantly load face descriptors for this session's class.
     """
     if not embedding_manager:
-        raise HTTPException(status_code=503, detail="Embedding manager not initialized")
+        raise HTTPException(
+            status_code=503, 
+            detail={
+                "message": "Embedding manager not initialized",
+                "init_status": init_status,
+                "init_error": init_error
+            }
+        )
 
     try:
         # 1. Insert session into Supabase
@@ -180,7 +221,14 @@ async def create_session(request: SessionCreate):
 @app.post("/load-session-embeddings/{session_id}")
 async def load_session_embeddings(session_id: str):
     if not embedding_manager:
-        raise HTTPException(status_code=503, detail="Embedding manager not initialized")
+        raise HTTPException(
+            status_code=503, 
+            detail={
+                "message": "Embedding manager not initialized",
+                "init_status": init_status,
+                "init_error": init_error
+            }
+        )
     
     embeddings = await embedding_manager.load_session_embeddings(session_id)
     if embeddings is None:
@@ -210,7 +258,14 @@ async def check_access(session_id: str, request: Request):
 @app.post("/recognize/{session_id}")
 async def recognize(session_id: str, request: Request, file: UploadFile = File(...)):
     if not recognizer or not detector or not embedding_manager:
-        raise HTTPException(status_code=503, detail="Services not initialized")
+        raise HTTPException(
+            status_code=503, 
+            detail={
+                "message": "Face recognition services not fully initialized",
+                "init_status": init_status,
+                "init_error": init_error
+            }
+        )
     
     # Device lock check removed as per request
     

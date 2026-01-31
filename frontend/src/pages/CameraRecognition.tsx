@@ -276,6 +276,20 @@ const CameraRecognition = () => {
         return;
       }
 
+      if (response.status === 503) {
+        const errorData = await response.json();
+        const detail = errorData.detail;
+        const msg = typeof detail === 'object' ? detail.message : (detail || "Service initializing");
+        toast.error(msg, {
+          description: "The face recognition models are still loading. This usually takes 1-2 minutes after deployment.",
+          duration: 3000
+        });
+        setRecognizing(false);
+        // Wait a bit longer before next capture attempt
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        return;
+      }
+
       const result = await response.json();
       
       if (result.status === "success") {

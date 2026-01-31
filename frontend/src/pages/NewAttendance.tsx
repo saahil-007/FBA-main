@@ -123,7 +123,16 @@ const NewAttendance = () => {
 
       // Call backend to pre-load embeddings
       try {
-        await fetch(`${API_URL}/load-session-embeddings/${data.id}`, { method: 'POST' });
+        const beResponse = await fetch(`${API_URL}/load-session-embeddings/${data.id}`, { method: 'POST' });
+        if (beResponse.status === 503) {
+          const errorData = await beResponse.json();
+          const detail = errorData.detail;
+          if (typeof detail === 'object') {
+            toast.warning(`Backend is still starting: ${detail.init_status}. Please wait a minute before starting the camera.`);
+          } else {
+            toast.warning("Backend is still initializing. Please wait a minute.");
+          }
+        }
       } catch (beError) {
         console.error("Backend pre-load failed:", beError);
       }
