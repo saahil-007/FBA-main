@@ -12,7 +12,6 @@ class FaceRecognizer:
         sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
         sess_options.intra_op_num_threads = 1
         sess_options.inter_op_num_threads = 1
-        sess_options.enable_cpu_mem_access_optimization = True
         
         # Check for available providers
         available_providers = ort.get_available_providers()
