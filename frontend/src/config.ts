@@ -1,7 +1,10 @@
 const getApiUrl = () => {
-  const envUrl = import.meta.env.VITE_API_URL;
+  let envUrl = import.meta.env.VITE_API_URL;
   
-  if (envUrl) return envUrl;
+  if (envUrl) {
+    // Remove trailing slashes to prevent double slashes in API calls
+    return envUrl.replace(/\/+$/, '');
+  }
 
   // Fallback for local development
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {

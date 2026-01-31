@@ -42,9 +42,9 @@ embedding_manager = None
 
 # Configuration from Environment Variables
 # Using high-accuracy models from public-data/insightface
-HF_REPO = os.environ.get("HF_REPO", "public-data/insightface")
-DET_MODEL_FILE = os.environ.get("DET_MODEL_FILE", "models/buffalo_l/det_10g.onnx")
-REC_MODEL_FILE = os.environ.get("REC_MODEL_FILE", "models/buffalo_l/w600k_r50.onnx")
+HF_REPO = os.environ.get("HF_REPO", "public-data/insightface").strip()
+DET_MODEL_FILE = os.environ.get("DET_MODEL_FILE", "models/buffalo_l/det_10g.onnx").strip()
+REC_MODEL_FILE = os.environ.get("REC_MODEL_FILE", "models/buffalo_l/w600k_r50.onnx").strip()
 RECOGNITION_THRESHOLD = float(os.environ.get("RECOGNITION_THRESHOLD", "0.45"))
 
 @asynccontextmanager
