@@ -35,7 +35,7 @@ const CameraRecognition = () => {
       if (error) throw error;
       
       toast.success("Session finished successfully");
-      navigate(`/teacher/new-attendance/${sessionId}`);
+      navigate(`/student/view/${sessionId}`);
     } catch (error) {
       console.error("Error finishing session:", error);
       toast.error("Failed to finish session");
