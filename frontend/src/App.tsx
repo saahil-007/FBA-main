@@ -71,7 +71,7 @@ const App = () => (
             </ProtectedRoute>
           } />
 
-          <Route path="/teacher/camera/:sessionId" element={<CameraRecognition />} />
+          <Route path="/student/camera/:sessionId" element={<CameraRecognition />} />
           <Route path="/student/view/:sessionId" element={<StudentListView />} />
           
           <Route path="/teacher/past-sessions" element={

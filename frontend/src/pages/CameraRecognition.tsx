@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Loader2, Camera, X,CheckCircle2, UserCheck } from "lucide-react";
+import { Loader2, Camera, X,CheckCircle2, UserCheck, RotateCcw } from "lucide-react";
 
 import { API_URL } from "@/config";
 
@@ -23,6 +23,13 @@ const CameraRecognition = () => {
   const [isCameraActive, setIsCameraActive] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+
+  const switchCamera = () => {
+    setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
+    setIsCameraReady(false);
+    setTimeout(() => setIsCameraReady(true), 100);
+  };
 
   const handleFinish = async () => {
     try {
@@ -339,21 +346,21 @@ const CameraRecognition = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#0F0F10] text-white p-6">
-      <div className="max-w-2xl mx-auto space-y-8">
+    <div className="min-h-screen bg-[#0F0F10] text-white p-4 sm:p-6">
+      <div className="max-w-2xl mx-auto space-y-4 sm:space-y-8">
         {/* Header */}
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center justify-between gap-2 sm:gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="text-white hover:bg-white/10">
-            <X className="h-6 w-6" />
+            <X className="h-5 w-5 sm:h-6 sm:w-6" />
           </Button>
           <div className="flex-1 text-center">
-            <h1 className="text-xl font-bold font-poppins">Active Session</h1>
-            <p className="text-white/60 text-sm">Real-time Recognition</p>
+            <h1 className="text-lg sm:text-xl font-bold font-poppins">Active Session</h1>
+            <p className="text-white/60 text-xs sm:text-sm">Real-time Recognition</p>
           </div>
           <Button 
             variant="default" 
             size="sm" 
-            className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg"
+            className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg text-sm sm:text-base"
             onClick={handleFinish}
           >
             Finish
@@ -381,17 +388,31 @@ const CameraRecognition = () => {
               <Camera className="w-4 h-4" />
               Camera Feed
             </h2>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className={`text-xs h-7 px-3 ${isCameraActive ? 'border-red-500/50 text-red-500 hover:bg-red-500/10' : 'border-green-500/50 text-green-500 hover:bg-green-500/10'}`}
-              onClick={() => setIsCameraActive(!isCameraActive)}
-            >
-              {isCameraActive ? "Stop Camera" : "Start Camera"}
-            </Button>
+            <div className="flex gap-2">
+              {isCameraActive && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="text-xs h-7 px-2 border-blue-500/50 text-blue-500 hover:bg-blue-500/10"
+                  onClick={switchCamera}
+                  title={`Switch to ${facingMode === 'user' ? 'back' : 'front'} camera`}
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span className="hidden sm:inline ml-1">Flip</span>
+                </Button>
+              )}
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className={`text-xs h-7 px-3 ${isCameraActive ? 'border-red-500/50 text-red-500 hover:bg-red-500/10' : 'border-green-500/50 text-green-500 hover:bg-green-500/10'}`}
+                onClick={() => setIsCameraActive(!isCameraActive)}
+              >
+                {isCameraActive ? "Stop Camera" : "Start Camera"}
+              </Button>
+            </div>
           </div>
 
-          <Card className="overflow-hidden border-2 border-primary/20 bg-card/10 backdrop-blur-xl relative aspect-video flex items-center justify-center">
+          <Card className="overflow-hidden border-2 border-primary/20 bg-card/10 backdrop-blur-xl relative aspect-[9/16] sm:aspect-video flex items-center justify-center">
             {isCameraActive ? (
               <>
                 <Webcam
@@ -399,7 +420,7 @@ const CameraRecognition = () => {
                   ref={webcamRef}
                   screenshotFormat="image/jpeg"
                   videoConstraints={{
-                    facingMode: "user",
+                    facingMode: facingMode,
                     width: 1280,
                     height: 720
                   }}
@@ -420,8 +441,8 @@ const CameraRecognition = () => {
                   ref={canvasRef}
                   className="absolute inset-0 w-full h-full z-20 pointer-events-none"
                 />
-                <div className="absolute inset-0 border-[40px] border-black/40 flex items-center justify-center pointer-events-none">
-                  <div className="w-64 h-80 border-2 border-white/30 rounded-[40px] relative">
+                <div className="absolute inset-0 border-[20px] sm:border-[40px] border-black/40 flex items-center justify-center pointer-events-none">
+                  <div className="w-72 h-96 sm:w-64 sm:h-80 border-2 border-white/30 rounded-[40px] relative">
                     <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-xl" />
                     <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-xl" />
                     <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-xl" />

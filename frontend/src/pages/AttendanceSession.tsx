@@ -246,11 +246,11 @@ const AttendanceSession = () => {
               <CardContent className="space-y-4">
                 <p className="text-sm text-muted-foreground">Open this on a tablet or phone to start the facial recognition scanner.</p>
                 <div className="flex gap-2">
-                  <Button className="flex-1" onClick={() => navigate(`/teacher/camera/${sessionId}`)}>
+                  <Button className="flex-1" onClick={() => navigate(`/student/camera/${sessionId}`)}>
                     Open Camera
                   </Button>
                   <a 
-                    href={getShareUrl(`/teacher/camera/${sessionId}`)}
+                    href={getShareUrl(`/student/camera/${sessionId}`)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center justify-center rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 w-10 shrink-0"
@@ -258,7 +258,7 @@ const AttendanceSession = () => {
                   >
                     <LinkIcon className="w-4 h-4" />
                   </a>
-                  <Button variant="outline" size="icon" onClick={() => copyToClipboard(`/teacher/camera/${sessionId}`)} title="Copy link">
+                  <Button variant="outline" size="icon" onClick={() => copyToClipboard(`/student/camera/${sessionId}`)} title="Copy link">
                     <Share2 className="w-4 h-4" />
                   </Button>
                 </div>
