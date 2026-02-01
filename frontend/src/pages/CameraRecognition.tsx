@@ -20,7 +20,8 @@ const CameraRecognition = () => {
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [detections, setDetections] = useState<any[]>([]);
   const [isRecognized, setIsRecognized] = useState(false);
-  const [isCameraActive, setIsCameraActive] = useState(true);
+  const [isCameraActive, setIsCameraActive] = useState(false); // Default to false
+  const [isProcessing, setIsProcessing] = useState(false); // Control start/stop
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
@@ -33,7 +34,7 @@ const CameraRecognition = () => {
 
   const handleFinish = async () => {
     try {
-      // Mark session as completed in Supabase
+      // Mark session as completed in Supabase (since teacher is using this on a single device)
       const { error } = await supabase
         .from("sessions")
         .update({ status: "completed" })
@@ -41,11 +42,23 @@ const CameraRecognition = () => {
       
       if (error) throw error;
       
-      toast.success("Session finished successfully");
+      // Clear backend cache
+      fetch(`${API_URL}/clear-session-cache/${sessionId}`, { method: 'POST' }).catch(console.error);
+
+      toast.success("Attendance session completed");
       navigate(`/student/view/${sessionId}`);
     } catch (error) {
       console.error("Error finishing session:", error);
       toast.error("Failed to finish session");
+    }
+  };
+
+  const toggleProcessing = () => {
+    if (!isCameraActive) {
+      setIsCameraActive(true);
+      setIsProcessing(true);
+    } else {
+      setIsProcessing(!isProcessing);
     }
   };
 
@@ -54,13 +67,13 @@ const CameraRecognition = () => {
     
     // Auto-capture interval
     const interval = setInterval(() => {
-      if (isCameraReady && !recognizing) {
+      if (isCameraReady && !recognizing && isProcessing) {
         captureAndRecognize();
       }
     }, 750); // Faster interval for real-time feel
 
     return () => clearInterval(interval);
-  }, [isCameraReady, recognizing]);
+  }, [isCameraReady, recognizing, isProcessing]);
 
   // Effect to clear boxes after a short delay
   useEffect(() => {
@@ -236,7 +249,6 @@ const CameraRecognition = () => {
 
   const checkSession = async () => {
     try {
-      // Check if session is active via Backend (Lock removed)
       const accessRes = await fetch(`${API_URL}/sessions/${sessionId}/check-access`);
       if (accessRes.ok) {
         const accessData = await accessRes.json();
@@ -245,8 +257,8 @@ const CameraRecognition = () => {
           navigate("/dashboard");
           return;
         }
-      } else {
-        toast.error("Session not found or server error");
+      } else if (accessRes.status === 404) {
+        toast.error("Session not found");
         navigate("/dashboard");
         return;
       }
@@ -303,31 +315,31 @@ const CameraRecognition = () => {
         const currentDetections = result.detections || [];
         setDetections(currentDetections);
 
-        // Update the summary UI with the first matched student in this frame
-        const firstMatch = currentDetections.find((d: any) => d.match)?.match;
+        // Track matches for the summary UI and toasts
+        const matches = currentDetections.filter((d: any) => d.match).map((d: any) => d.match);
         
-        if (firstMatch) {
+        if (matches.length > 0) {
           setIsRecognized(true);
           
-          if (firstMatch.status === "marked_now") {
-            setLastMatch(firstMatch);
-            setLastSuccessfullyMarked(firstMatch);
-            toast.success(`Marked Present: ${firstMatch.name} (${firstMatch.roll_no})`, {
-              icon: <UserCheck className="w-5 h-5 text-green-500" />,
-              duration: 2000
-            });
-          } else if (firstMatch.status === "already_marked") {
-            setLastMatch(firstMatch);
-            toast.info(`Already Marked: ${firstMatch.name} (${firstMatch.roll_no})`, {
-              icon: <CheckCircle2 className="w-5 h-5 text-blue-500" />,
-              duration: 2000
-            });
-          } else {
-            setLastMatch(firstMatch);
+          // Show toasts for newly marked students
+          const newlyMarked = matches.filter((m: any) => m.status === "marked_now");
+          if (newlyMarked.length > 0) {
+            if (newlyMarked.length === 1) {
+              toast.success(`Marked Present: ${newlyMarked[0].name}`, {
+                icon: <UserCheck className="w-5 h-5 text-green-500" />,
+                duration: 2000
+              });
+            } else {
+              toast.success(`Marked ${newlyMarked.length} students present`, {
+                icon: <UserCheck className="w-5 h-5 text-green-500" />,
+                duration: 2000
+              });
+            }
+            setLastSuccessfullyMarked(newlyMarked[0]);
           }
-        } else {
-          // If no matches in this frame, we don't necessarily clear lastMatch 
-          // because it will be cleared by the timeout effect anyway.
+
+          // Update lastMatch with the most prominent one for the summary UI
+          setLastMatch(matches[0]);
         }
       }
     } catch (error) {
@@ -357,14 +369,26 @@ const CameraRecognition = () => {
             <h1 className="text-lg sm:text-xl font-bold font-poppins">Active Session</h1>
             <p className="text-white/60 text-xs sm:text-sm">Real-time Recognition</p>
           </div>
-          <Button 
-            variant="default" 
-            size="sm" 
-            className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg text-sm sm:text-base"
-            onClick={handleFinish}
-          >
-            Finish
-          </Button>
+          <div className="flex gap-2">
+            {isCameraActive && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className={`text-xs h-9 px-4 border-2 ${isProcessing ? 'border-red-500 text-red-500 hover:bg-red-500/10' : 'border-green-500 text-green-500 hover:bg-green-500/10'}`}
+                onClick={toggleProcessing}
+              >
+                {isProcessing ? 'Stop' : 'Start'}
+              </Button>
+            )}
+            <Button 
+              variant="default" 
+              size="sm" 
+              className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg h-9 px-4 font-bold"
+              onClick={handleFinish}
+            >
+              Finish Session
+            </Button>
+          </div>
         </div>
 
         {/* Camera Feed Section */}
@@ -455,9 +479,16 @@ const CameraRecognition = () => {
                 <div className="p-4 rounded-full bg-white/5 border border-white/10">
                   <Camera className="w-12 h-12 opacity-20" />
                 </div>
-                <p className="text-sm font-medium">Camera is inactive</p>
-                <Button variant="outline" size="sm" onClick={() => setIsCameraActive(true)}>
-                  Enable Camera
+                <p className="text-sm font-medium">
+                  {!isCameraActive ? "Camera is inactive" : "Processing is stopped"}
+                </p>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="border-primary text-primary hover:bg-primary/10"
+                  onClick={toggleProcessing}
+                >
+                  {!isCameraActive ? "Enable Camera" : "Resume Recognition"}
                 </Button>
               </div>
             )}

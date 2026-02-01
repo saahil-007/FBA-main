@@ -16,11 +16,22 @@ const StudentListView = () => {
   const [exporting, setExporting] = useState<string | null>(null);
   const [session, setSession] = useState<any>(null);
   const [presentStudents, setPresentStudents] = useState<any[]>([]);
+  const [allStudents, setAllStudents] = useState<any[]>([]);
 
   useEffect(() => {
     fetchSessionDetails();
     fetchPresentStudents();
-    
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (session) {
+      fetchAllStudents();
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (!sessionId || allStudents.length === 0) return;
+
     const channel = supabase
       .channel(`student-view-${sessionId}`)
       .on(
@@ -31,8 +42,18 @@ const StudentListView = () => {
           table: 'attendance_records',
           filter: `session_id=eq.${sessionId}`
         },
-        () => {
-          fetchPresentStudents();
+        (payload) => {
+          const newRecord = payload.new;
+          const student = allStudents.find(s => s.id === newRecord.student_id);
+          
+          if (student) {
+            setPresentStudents(prev => {
+              if (prev.some(p => p.id === student.id)) return prev;
+              return [...prev, student];
+            });
+          } else {
+            fetchPresentStudents();
+          }
         }
       )
       .subscribe();
@@ -40,7 +61,22 @@ const StudentListView = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [sessionId]);
+  }, [sessionId, allStudents]);
+
+  const fetchAllStudents = async () => {
+    if (!session) return;
+    
+    const { data } = await supabase
+      .from("students")
+      .select("id, name, roll_no")
+      .eq("branch", session.branch)
+      .eq("year", session.year)
+      .eq("division", session.division);
+      
+    if (data) {
+      setAllStudents(data);
+    }
+  };
 
   const fetchSessionDetails = async () => {
     const { data, error } = await supabase

@@ -36,7 +36,7 @@ class FaceDetector:
             anchor_centers.append(np.repeat(anchor_grid * stride, 2, axis=0).astype(np.float32))
         return anchor_centers
 
-    def detect(self, img, threshold=0.4, max_num=10):
+    def detect(self, img, threshold=0.4, max_num=25):
         if img is None:
             return [], []
             

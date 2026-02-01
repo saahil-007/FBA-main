@@ -267,9 +267,25 @@ async def recognize(session_id: str, request: Request, file: UploadFile = File(.
             }
         )
     
-    # Device lock check removed as per request
-    
-    # Load cache if missing
+    # 1. Check if session is active
+    try:
+        session_resp = supabase.table("sessions").select("status").eq("id", session_id).execute()
+        if not session_resp.data:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        if session_resp.data[0].get("status") != "active":
+             raise HTTPException(
+                 status_code=403, 
+                 detail=f"Session is no longer active (Status: {session_resp.data[0].get('status')}). Attendance cannot be marked."
+             )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error checking session status for {session_id}: {e}")
+        # If we can't check status, we should probably not proceed
+        raise HTTPException(status_code=500, detail="Error verifying session status")
+
+    # 2. Load cache if missing
     known_embeddings = embedding_manager.get_session_embeddings(session_id)
     if known_embeddings is None:
         known_embeddings = await embedding_manager.load_session_embeddings(session_id)
@@ -284,13 +300,13 @@ async def recognize(session_id: str, request: Request, file: UploadFile = File(.
         if img is None:
             raise HTTPException(status_code=400, detail="Invalid image data")
         
-        # 1. Detection (All faces)
-        bboxes, kpss = detector.detect(img)
+        # 3. Detection (All faces - up to 25)
+        bboxes, kpss = detector.detect(img, max_num=25)
         
         if not bboxes:
             return {"status": "success", "detections": [], "message": "No faces detected"}
 
-        # 2. Recognition (Batch)
+        # 4. Recognition (Batch)
         input_embeddings = recognizer.get_embeddings(img, bboxes, kpss)
         
         detections = []
@@ -342,7 +358,7 @@ async def recognize(session_id: str, request: Request, file: UploadFile = File(.
                     "student_id": student_id
                 }
                 mark_resp = supabase.table("attendance_records").insert(insert_data).execute()
-                return "marked"
+                return "marked_now"
             except Exception as e:
                 logger.error(f"Failed to mark student {student_id}: {e}")
                 return "error"

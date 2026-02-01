@@ -25,7 +25,11 @@ const AttendanceSession = () => {
     fetchSessionDetails();
     fetchPresentStudents();
     fetchAllStudents();
-    
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || allStudents.length === 0) return;
+
     // Subscribe to attendance records for real-time updates
     const channel = supabase
       .channel(`attendance-${sessionId}`)
@@ -37,8 +41,20 @@ const AttendanceSession = () => {
           table: 'attendance_records',
           filter: `session_id=eq.${sessionId}`
         },
-        () => {
-          fetchPresentStudents();
+        (payload) => {
+          const newRecord = payload.new;
+          const student = allStudents.find(s => s.id === newRecord.student_id);
+          
+          if (student) {
+            setPresentStudents(prev => {
+              // Avoid duplicates
+              if (prev.some(p => p.id === student.id)) return prev;
+              return [...prev, student];
+            });
+          } else {
+            // Fallback if student not in allStudents (unlikely)
+            fetchPresentStudents();
+          }
         }
       )
       .subscribe();
@@ -46,17 +62,37 @@ const AttendanceSession = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [sessionId]);
+  }, [sessionId, allStudents]);
 
   const fetchAllStudents = async () => {
     if (!session) return;
+    
+    // Try to get from cache first
+    const cacheKey = `descriptors_${session.branch}_${session.year}_${session.division}`;
+    const cachedData = localStorage.getItem(cacheKey);
+    
+    if (cachedData) {
+      try {
+        const parsed = JSON.parse(cachedData);
+        setAllStudents(parsed);
+        console.log(`Loaded ${parsed.length} students from browser cache`);
+        return; // Skip DB fetch if cached
+      } catch (e) {
+        console.error("Cache parse error:", e);
+      }
+    }
+
     const { data } = await supabase
       .from("students")
       .select("id, name, roll_no")
       .eq("branch", session.branch)
       .eq("year", session.year)
       .eq("division", session.division);
-    if (data) setAllStudents(data);
+    if (data) {
+      setAllStudents(data);
+      // Optional: Update cache if it was missing
+      localStorage.setItem(cacheKey, JSON.stringify(data));
+    }
   };
 
   useEffect(() => {

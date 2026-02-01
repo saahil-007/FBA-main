@@ -120,6 +120,25 @@ const NewAttendance = () => {
       }).select().single();
 
       if (error) throw error;
+      
+      // Cache face descriptors in browser for faster processing
+      try {
+        const { data: studentsData, error: studentsError } = await supabase
+          .from("students")
+          .select("id, name, roll_no, face_descriptor")
+          .eq("branch", formData.branch)
+          .eq("year", formData.year)
+          .eq("division", formData.division)
+          .not("face_descriptor", "is", null);
+
+        if (!studentsError && studentsData) {
+          const cacheKey = `descriptors_${formData.branch}_${formData.year}_${formData.division}`;
+          localStorage.setItem(cacheKey, JSON.stringify(studentsData));
+          console.log(`Cached ${studentsData.length} descriptors for ${cacheKey}`);
+        }
+      } catch (cacheError) {
+        console.error("Failed to cache descriptors:", cacheError);
+      }
 
       // Call backend to pre-load embeddings
       try {
