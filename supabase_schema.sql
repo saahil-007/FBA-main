@@ -78,7 +78,8 @@ create table if not exists attendance_records (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   session_id uuid references sessions(id),
   student_id uuid references students(id),
-  timestamp timestamp with time zone default timezone('utc'::text, now())
+  timestamp timestamp with time zone default timezone('utc'::text, now()),
+  constraint unique_session_student unique(session_id, student_id)
 );
 
 -- 10. Enable RLS
@@ -99,5 +100,11 @@ create policy "Public Read" on classrooms for select using (true);
 create policy "Public Read" on subjects for select using (true);
 
 create policy "Enable all for authenticated" on sessions for all using (auth.role() = 'authenticated');
+create policy "Public read sessions" on sessions for select using (true);
+
 create policy "Enable all for authenticated" on students for all using (auth.role() = 'authenticated');
+create policy "Public read students" on students for select using (true);
+
 create policy "Enable all for authenticated" on attendance_records for all using (auth.role() = 'authenticated');
+create policy "Public read attendance" on attendance_records for select using (true);
+create policy "Public insert attendance" on attendance_records for insert with check (true);

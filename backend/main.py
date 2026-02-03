@@ -310,6 +310,7 @@ async def recognize(session_id: str, request: Request, file: UploadFile = File(.
         input_embeddings = recognizer.get_embeddings(img, bboxes, kpss)
         
         detections = []
+        img_h, img_w = img.shape[:2]
 
         for i, input_embedding in enumerate(input_embeddings):
             matches = []
@@ -329,8 +330,18 @@ async def recognize(session_id: str, request: Request, file: UploadFile = File(.
             if matches:
                 best_match = matches[0]
             
+            # Normalize bbox coordinates for universal display
+            x1, y1, x2, y2 = bboxes[i]
+            normalized_bbox = [
+                float(x1 / img_w),
+                float(y1 / img_h),
+                float(x2 / img_w),
+                float(y2 / img_h)
+            ]
+            
             detections.append({
                 "bbox": bboxes[i],
+                "normalized_bbox": normalized_bbox,
                 "match": best_match
             })
 
@@ -342,23 +353,21 @@ async def recognize(session_id: str, request: Request, file: UploadFile = File(.
 
         async def mark_student(student_id, match_info):
             try:
-                # 1. Check if already marked in this session
-                check_resp = supabase.table("attendance_records")\
-                    .select("id")\
-                    .eq("session_id", session_id)\
-                    .eq("student_id", student_id)\
-                    .execute()
-                
-                if check_resp.data:
-                    return "already_marked"
-
-                # 2. Mark attendance
+                # Mark attendance (Unique constraint in DB handles duplicates)
                 insert_data = {
                     "session_id": session_id,
                     "student_id": student_id
                 }
-                mark_resp = supabase.table("attendance_records").insert(insert_data).execute()
-                return "marked_now"
+                # Use a single insert attempt - unique constraint handles concurrency
+                try:
+                    mark_resp = supabase.table("attendance_records").insert(insert_data).execute()
+                    return "marked_now"
+                except Exception as e:
+                    # Check if it's a duplicate key error (code 23505 in Postgres)
+                    error_msg = str(e).lower()
+                    if "duplicate key" in error_msg or "23505" in error_msg:
+                        return "already_marked"
+                    raise e
             except Exception as e:
                 logger.error(f"Failed to mark student {student_id}: {e}")
                 return "error"
@@ -376,7 +385,8 @@ async def recognize(session_id: str, request: Request, file: UploadFile = File(.
 
         return {
             "status": "success", 
-            "detections": detections
+            "detections": detections,
+            "image_size": {"width": img_w, "height": img_h}
         }
     except Exception as e:
         logger.exception(f"Error recognition in session {session_id}")

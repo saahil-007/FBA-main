@@ -20,12 +20,12 @@ const StudentListView = () => {
 
   useEffect(() => {
     fetchSessionDetails();
-    fetchPresentStudents();
   }, [sessionId]);
 
   useEffect(() => {
     if (session) {
       fetchAllStudents();
+      fetchPresentStudents();
     }
   }, [session]);
 

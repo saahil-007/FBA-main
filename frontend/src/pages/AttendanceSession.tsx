@@ -5,7 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Loader2, Camera, Users, CheckCircle2, Link as LinkIcon, Share2, ArrowLeft, UserCheck, FileText, Table as TableIcon, RefreshCcw } from "lucide-react";
+import { Loader2, Camera, Users, CheckCircle2, Link as LinkIcon, Share2, ArrowLeft, UserCheck, FileText, Table as TableIcon, RefreshCcw, Search } from "lucide-react";
+import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 import { API_URL } from "@/config";
@@ -19,6 +27,7 @@ const AttendanceSession = () => {
   const [presentStudents, setPresentStudents] = useState<any[]>([]);
 
   const [manualStudentId, setManualStudentId] = useState("");
+  const [studentSearch, setStudentSearch] = useState("");
   const [allStudents, setAllStudents] = useState<any[]>([]);
 
   useEffect(() => {
@@ -30,7 +39,7 @@ const AttendanceSession = () => {
   useEffect(() => {
     if (!sessionId || allStudents.length === 0) return;
 
-    // Subscribe to attendance records for real-time updates
+    console.log(`Starting real-time subscription for session: ${sessionId}`);
     const channel = supabase
       .channel(`attendance-${sessionId}`)
       .on(
@@ -42,24 +51,26 @@ const AttendanceSession = () => {
           filter: `session_id=eq.${sessionId}`
         },
         (payload) => {
+          console.log("Real-time insert received:", payload.new);
           const newRecord = payload.new;
           const student = allStudents.find(s => s.id === newRecord.student_id);
           
           if (student) {
             setPresentStudents(prev => {
-              // Avoid duplicates
               if (prev.some(p => p.id === student.id)) return prev;
               return [...prev, student];
             });
           } else {
-            // Fallback if student not in allStudents (unlikely)
             fetchPresentStudents();
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log(`Subscription status: ${status}`);
+      });
 
     return () => {
+      console.log(`Cleaning up subscription for session: ${sessionId}`);
       supabase.removeChannel(channel);
     };
   }, [sessionId, allStudents]);
@@ -71,26 +82,36 @@ const AttendanceSession = () => {
     const cacheKey = `descriptors_${session.branch}_${session.year}_${session.division}`;
     const cachedData = localStorage.getItem(cacheKey);
     
+    let students = [];
     if (cachedData) {
       try {
-        const parsed = JSON.parse(cachedData);
-        setAllStudents(parsed);
-        console.log(`Loaded ${parsed.length} students from browser cache`);
-        return; // Skip DB fetch if cached
+        students = JSON.parse(cachedData);
+        console.log(`Loaded ${students.length} students from browser cache`);
       } catch (e) {
         console.error("Cache parse error:", e);
       }
     }
 
-    const { data } = await supabase
+    // Always fetch from DB to ensure it's up to date, but update state immediately if we have cache
+    if (students.length > 0) {
+      setAllStudents(students);
+    }
+
+    const { data, error } = await supabase
       .from("students")
       .select("id, name, roll_no")
       .eq("branch", session.branch)
       .eq("year", session.year)
       .eq("division", session.division);
+      
+    if (error) {
+      console.error("Error fetching students:", error);
+      return;
+    }
+
     if (data) {
+      console.log(`Fetched ${data.length} students from database`);
       setAllStudents(data);
-      // Optional: Update cache if it was missing
       localStorage.setItem(cacheKey, JSON.stringify(data));
     }
   };
@@ -101,6 +122,9 @@ const AttendanceSession = () => {
 
   const handleManualMark = async () => {
     if (!manualStudentId) return;
+    
+    // Find the student in allStudents to update presentStudents optimistically
+    const student = allStudents.find(s => s.id === manualStudentId);
     
     const { error } = await supabase
       .from("attendance_records")
@@ -115,7 +139,14 @@ const AttendanceSession = () => {
     } else {
       toast.success("Student marked present");
       setManualStudentId("");
-      fetchPresentStudents();
+      
+      // Optimistic update for presentStudents
+      if (student) {
+        setPresentStudents(prev => {
+          if (prev.some(p => p.id === student.id)) return prev;
+          return [...prev, student];
+        });
+      }
     }
   };
 
@@ -241,31 +272,58 @@ const AttendanceSession = () => {
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-12 space-y-6 sm:space-y-8">
         {/* Manual Verification Section */}
         <Card className="border-border bg-card/50 backdrop-blur-xl">
-          <CardHeader className="p-4 sm:p-6">
+          <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-2">
             <CardTitle className="text-base sm:text-lg flex items-center gap-2">
               <UserCheck className="w-5 h-5 text-primary" />
               Manual Verification
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-4 sm:p-6 pt-0 sm:pt-0 flex flex-col sm:flex-row gap-3 sm:gap-4">
-            <select 
-              className="flex-1 bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary min-h-[40px]"
-              value={manualStudentId}
-              onChange={(e) => setManualStudentId(e.target.value)}
-            >
-              <option value="">Select Student</option>
-              {allStudents
-                .filter(s => !presentStudents.some(ps => ps.id === s.id))
-                .sort((a,b) => a.roll_no.localeCompare(b.roll_no))
-                .map(s => (
-                  <option key={s.id} value={s.id}>
-                    [{s.roll_no}] {s.name}
-                  </option>
-                ))}
-            </select>
-            <Button onClick={handleManualMark} disabled={!manualStudentId} className="h-10 sm:h-auto">
-              Mark Present
-            </Button>
+          <CardContent className="p-4 sm:p-6 pt-0 sm:pt-0 space-y-4">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by name or roll no..."
+                  className="pl-9"
+                  value={studentSearch}
+                  onChange={(e) => setStudentSearch(e.target.value)}
+                />
+              </div>
+              <div className="flex-[1.5] flex gap-2">
+                <Select value={manualStudentId} onValueChange={setManualStudentId}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Select Student" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allStudents
+                      .filter(s => !presentStudents.some(ps => ps.id === s.id))
+                      .filter(s => 
+                        s.name.toLowerCase().includes(studentSearch.toLowerCase()) || 
+                        s.roll_no.toLowerCase().includes(studentSearch.toLowerCase())
+                      )
+                      .sort((a,b) => a.roll_no.localeCompare(b.roll_no))
+                      .map(s => (
+                        <SelectItem key={s.id} value={s.id}>
+                          [{s.roll_no}] {s.name}
+                        </SelectItem>
+                      ))}
+                    {allStudents
+                      .filter(s => !presentStudents.some(ps => ps.id === s.id))
+                      .filter(s => 
+                        s.name.toLowerCase().includes(studentSearch.toLowerCase()) || 
+                        s.roll_no.toLowerCase().includes(studentSearch.toLowerCase())
+                      ).length === 0 && (
+                        <div className="p-2 text-sm text-center text-muted-foreground">
+                          No students found
+                        </div>
+                      )}
+                  </SelectContent>
+                </Select>
+                <Button onClick={handleManualMark} disabled={!manualStudentId} className="shrink-0">
+                  Mark Present
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
 

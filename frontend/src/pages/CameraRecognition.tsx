@@ -25,6 +25,7 @@ const CameraRecognition = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  const [isTeacher, setIsTeacher] = useState(false);
 
   const switchCamera = () => {
     setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
@@ -33,8 +34,9 @@ const CameraRecognition = () => {
   };
 
   const handleFinish = async () => {
+    if (!isTeacher) return;
     try {
-      // Mark session as completed in Supabase (since teacher is using this on a single device)
+      // Mark session as completed in Supabase
       const { error } = await supabase
         .from("sessions")
         .update({ status: "completed" })
@@ -46,7 +48,7 @@ const CameraRecognition = () => {
       fetch(`${API_URL}/clear-session-cache/${sessionId}`, { method: 'POST' }).catch(console.error);
 
       toast.success("Attendance session completed");
-      navigate(`/student/view/${sessionId}`);
+      navigate(`/teacher/new-attendance/${sessionId}`); // Go back to session details
     } catch (error) {
       console.error("Error finishing session:", error);
       toast.error("Failed to finish session");
@@ -70,7 +72,7 @@ const CameraRecognition = () => {
       if (isCameraReady && !recognizing && isProcessing) {
         captureAndRecognize();
       }
-    }, 750); // Faster interval for real-time feel
+    }, 1000); // 1s interval is more stable for "universal" use across devices
 
     return () => clearInterval(interval);
   }, [isCameraReady, recognizing, isProcessing]);
@@ -81,8 +83,7 @@ const CameraRecognition = () => {
       const timer = setTimeout(() => {
         setDetections([]);
         setIsRecognized(false);
-        // setLastMatch(null); // Don't clear lastMatch here, it's used for the summary UI
-      }, 1000);
+      }, 1500);
       return () => clearTimeout(timer);
     }
   }, [detections]);
@@ -95,50 +96,43 @@ const CameraRecognition = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Match canvas size to video size
+    // Match canvas size to container size
     const video = webcamRef.current.video;
     if (video) {
-      const { clientWidth, clientHeight, videoWidth, videoHeight } = video;
+      const { clientWidth, clientHeight } = video;
       canvas.width = clientWidth;
       canvas.height = clientHeight;
       
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
-      // Calculate scaling accurately
-      // Backend uses 1280x720 screenshot as per videoConstraints
-      const scaleX = clientWidth / 1280;
-      const scaleY = clientHeight / 720;
-
       detections.forEach((detection) => {
-        const [x1, y1, x2, y2] = detection.bbox;
-        const match = detection.match;
+        // Use normalized coordinates for perfect scaling across all devices
+        const [nx1, ny1, nx2, ny2] = detection.normalized_bbox || [0,0,0,0];
         
-        const scaledX1 = x1 * scaleX;
-        const scaledY1 = y1 * scaleY;
-        const scaledX2 = x2 * scaleX;
-        const scaledY2 = y2 * scaleY;
+        const scaledX1 = nx1 * clientWidth;
+        const scaledY1 = ny1 * clientHeight;
+        const scaledX2 = nx2 * clientWidth;
+        const scaledY2 = ny2 * clientHeight;
         
         const width = scaledX2 - scaledX1;
         const height = scaledY2 - scaledY1;
         
+        const match = detection.match;
+        
         // Sublime Design Colors
         let primaryColor = '#ef4444'; // Red for unknown
-        let statusText = 'Unknown Student';
         
         if (match) {
           if (match.status === "marked_now") {
             primaryColor = '#22c55e'; // Green
-            statusText = match.name;
           } else if (match.status === "already_marked") {
             primaryColor = '#3b82f6'; // Blue
-            statusText = match.name;
           } else {
             primaryColor = '#eab308'; // Yellow
-            statusText = match.name;
           }
         }
 
-        // 1. Draw Subtle Corner Markers (Sublime Look)
+        // 1. Draw Corner Markers
         ctx.strokeStyle = primaryColor;
         ctx.lineWidth = 4;
         ctx.lineCap = 'round';
@@ -174,13 +168,7 @@ const CameraRecognition = () => {
         ctx.lineTo(scaledX2, scaledY2 - cornerSize);
         ctx.stroke();
 
-        // 2. Draw Semi-transparent Fill on hover-like detection
-        ctx.fillStyle = primaryColor;
-        ctx.globalAlpha = 0.05;
-        ctx.fillRect(scaledX1, scaledY1, width, height);
-        ctx.globalAlpha = 1.0;
-
-        // 3. Draw Accurate Label (Sublime Design)
+        // 2. Label Background
         if (match) {
           const labelPadding = 12;
           const fontSize = 14;
@@ -197,10 +185,9 @@ const CameraRecognition = () => {
           const labelX = scaledX1 + (width / 2) - (labelWidth / 2);
           const labelY = scaledY2 + 15;
 
-          // Glassmorphism Label Background
           ctx.save();
           ctx.beginPath();
-          const r = 12; // corner radius
+          const r = 12;
           ctx.moveTo(labelX + r, labelY);
           ctx.lineTo(labelX + labelWidth - r, labelY);
           ctx.quadraticCurveTo(labelX + labelWidth, labelY, labelX + labelWidth, labelY + r);
@@ -212,36 +199,20 @@ const CameraRecognition = () => {
           ctx.quadraticCurveTo(labelX, labelY, labelX + r, labelY);
           ctx.closePath();
           
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-          ctx.shadowBlur = 15;
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
           ctx.fill();
           
-          // Bottom Accent Line
           ctx.strokeStyle = primaryColor;
           ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(labelX + 15, labelY + labelHeight);
-          ctx.lineTo(labelX + labelWidth - 15, labelY + labelHeight);
           ctx.stroke();
           ctx.restore();
 
-          // Text Rendering
           ctx.fillStyle = '#FFFFFF';
           ctx.fillText(nameText, labelX + (labelWidth/2) - (nameWidth/2), labelY + 22);
           
           ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
           ctx.font = `500 ${fontSize - 2}px font-poppins, sans-serif`;
           ctx.fillText(subText, labelX + (labelWidth/2) - (subWidth/2), labelY + 38);
-        } else {
-          // Unknown Student Label
-          ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
-          ctx.font = 'bold 12px sans-serif';
-          const unknownText = 'UNKNOWN';
-          const uWidth = ctx.measureText(unknownText).width;
-          ctx.fillRect(scaledX1 + (width/2) - (uWidth/2) - 8, scaledY1 - 25, uWidth + 16, 20);
-          ctx.fillStyle = '#FFFFFF';
-          ctx.fillText(unknownText, scaledX1 + (width/2) - (uWidth/2), scaledY1 - 11);
         }
       });
     }
@@ -249,19 +220,31 @@ const CameraRecognition = () => {
 
   const checkSession = async () => {
     try {
-      const accessRes = await fetch(`${API_URL}/sessions/${sessionId}/check-access`);
-      if (accessRes.ok) {
-        const accessData = await accessRes.json();
-        if (accessData.status === 'denied') {
-          toast.error(accessData.message);
-          navigate("/dashboard");
-          return;
-        }
-      } else if (accessRes.status === 404) {
+      // 1. Check session status and teacher
+      const { data: session, error: sessionError } = await supabase
+        .from("sessions")
+        .select("status, teacher_id")
+        .eq("id", sessionId)
+        .single();
+
+      if (sessionError || !session) {
         toast.error("Session not found");
         navigate("/dashboard");
         return;
       }
+
+      if (session.status !== 'active') {
+        toast.error("Session is no longer active.");
+        navigate("/dashboard");
+        return;
+      }
+
+      // 2. Check if current user is the teacher
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && user.id === session.teacher_id) {
+        setIsTeacher(true);
+      }
+
     } catch (err) {
       console.error("Error checking session/access:", err);
     }
@@ -380,14 +363,16 @@ const CameraRecognition = () => {
                 {isProcessing ? 'Stop' : 'Start'}
               </Button>
             )}
-            <Button 
-              variant="default" 
-              size="sm" 
-              className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg h-9 px-4 font-bold"
-              onClick={handleFinish}
-            >
-              Finish Session
-            </Button>
+            {isTeacher && (
+              <Button 
+                variant="default" 
+                size="sm" 
+                className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg h-9 px-4 font-bold"
+                onClick={handleFinish}
+              >
+                Finish Session
+              </Button>
+            )}
           </div>
         </div>
 
