@@ -7,12 +7,15 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Loader2, Camera, Users, CheckCircle2, Link as LinkIcon, Share2, ArrowLeft, UserCheck, FileText, Table as TableIcon, RefreshCcw } from "lucide-react";
 import { 
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Search, UserPlus } from "lucide-react";
 import { API_URL } from "@/config";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 
@@ -23,8 +26,11 @@ const AttendanceSession = () => {
   const [exporting, setExporting] = useState<string | null>(null);
   const [session, setSession] = useState<any>(null);
   const [presentStudents, setPresentStudents] = useState<any[]>([]);
-  const [manualStudentId, setManualStudentId] = useState("");
+  const [manualStudentIds, setManualStudentIds] = useState<string[]>([]);
   const [allStudents, setAllStudents] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isMarking, setIsMarking] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchSessionDetails();
@@ -119,31 +125,50 @@ const AttendanceSession = () => {
   }, [session]);
 
   const handleManualMark = async () => {
-    if (!manualStudentId) return;
+    if (manualStudentIds.length === 0) return;
     
-    const student = allStudents.find(s => s.id === manualStudentId);
-    
-    const { error } = await supabase
-      .from("attendance_records")
-      .insert({
+    setIsMarking(true);
+    try {
+      const records = manualStudentIds.map(id => ({
         session_id: sessionId,
-        student_id: manualStudentId
-      });
+        student_id: id
+      }));
 
-    if (error) {
-      if (error.code === '23505') toast.error("Student already marked present");
-      else toast.error("Failed to mark student");
-    } else {
-      toast.success("Student marked present");
-      setManualStudentId("");
-      
-      if (student) {
+      const { error } = await supabase
+        .from("attendance_records")
+        .insert(records);
+
+      if (error) {
+        if (error.code === '23505') toast.error("Some students were already marked present");
+        else throw error;
+      } else {
+        toast.success(`${manualStudentIds.length} student(s) marked present`);
+        
+        // Update local state for immediate UI feedback
+        const newlyMarkedStudents = allStudents.filter(s => manualStudentIds.includes(s.id));
         setPresentStudents(prev => {
-          if (prev.some(p => p.id === student.id)) return prev;
-          return [...prev, student];
+          const existingIds = new Set(prev.map(p => p.id));
+          const filteredNew = newlyMarkedStudents.filter(s => !existingIds.has(s.id));
+          return [...prev, ...filteredNew];
         });
+
+        setManualStudentIds([]);
+        setIsDialogOpen(false);
       }
+    } catch (error) {
+      console.error("Error marking students:", error);
+      toast.error("Failed to mark students");
+    } finally {
+      setIsMarking(false);
     }
+  };
+
+  const toggleStudentSelection = (studentId: string) => {
+    setManualStudentIds(prev => 
+      prev.includes(studentId) 
+        ? prev.filter(id => id !== studentId) 
+        : [...prev, studentId]
+    );
   };
 
   const fetchSessionDetails = async () => {
@@ -292,6 +317,11 @@ const AttendanceSession = () => {
     s => !presentStudents.some(p => p.id === s.id)
   );
 
+  const filteredAbsentStudents = absentStudents.filter(s => 
+    s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    s.roll_no.toLowerCase().includes(searchQuery.toLowerCase())
+  ).sort((a, b) => a.roll_no.localeCompare(b.roll_no));
+
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-0">
       {/* Header */}
@@ -359,33 +389,82 @@ const AttendanceSession = () => {
                 Manual Marking
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-4 pt-0 space-y-3">
-              <Select value={manualStudentId} onValueChange={setManualStudentId}>
-                <SelectTrigger className="h-11">
-                  <SelectValue placeholder="Select student..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {absentStudents
-                    .sort((a, b) => a.roll_no.localeCompare(b.roll_no))
-                    .map(s => (
-                      <SelectItem key={s.id} value={s.id}>
-                        [{s.roll_no}] {s.name}
-                      </SelectItem>
-                    ))}
-                  {absentStudents.length === 0 && (
-                    <div className="p-2 text-sm text-center text-muted-foreground">
-                      All students marked
+            <CardContent className="p-4 pt-0">
+              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" className="w-full h-11 justify-between text-muted-foreground font-normal">
+                    <span className="flex items-center gap-2">
+                      <UserPlus className="w-4 h-4 text-primary" />
+                      Select multiple students...
+                    </span>
+                    <Badge variant="secondary" className="h-5 px-1.5">{manualStudentIds.length} selected</Badge>
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-[95vw] w-full sm:max-w-md p-0 overflow-hidden gap-0">
+                  <DialogHeader className="p-4 border-b">
+                    <DialogTitle className="text-base mb-2">Select Students</DialogTitle>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search by name or roll no..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-9 h-10 bg-muted/50"
+                      />
                     </div>
-                  )}
-                </SelectContent>
-              </Select>
-              <Button 
-                onClick={handleManualMark} 
-                disabled={!manualStudentId}
-                className="w-full h-11"
-              >
-                Mark Present
-              </Button>
+                  </DialogHeader>
+                  <div className="max-h-[50vh] overflow-y-auto p-2 space-y-1">
+                    {filteredAbsentStudents.length === 0 ? (
+                      <div className="py-8 text-center text-sm text-muted-foreground">
+                        {searchQuery ? "No matching students found" : "All students marked present"}
+                      </div>
+                    ) : (
+                      filteredAbsentStudents.map((student) => (
+                        <div
+                          key={student.id}
+                          className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${
+                            manualStudentIds.includes(student.id) 
+                              ? "bg-primary/10 border-primary/20 border" 
+                              : "hover:bg-muted/50 border border-transparent"
+                          }`}
+                          onClick={() => toggleStudentSelection(student.id)}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                              manualStudentIds.includes(student.id) 
+                                ? "bg-primary border-primary" 
+                                : "border-muted-foreground/30"
+                            }`}>
+                              {manualStudentIds.includes(student.id) && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                            </div>
+                            <div>
+                              <div className="text-sm font-bold text-primary">Roll: {student.roll_no}</div>
+                              <div className="text-xs text-muted-foreground">{student.name}</div>
+                            </div>
+                          </div>
+                          <Badge variant="outline" className="text-[10px] h-5">Absent</Badge>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <DialogFooter className="p-4 border-t bg-muted/20">
+                    <Button 
+                      onClick={handleManualMark} 
+                      disabled={manualStudentIds.length === 0 || isMarking}
+                      className="w-full h-11"
+                    >
+                      {isMarking ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Marking...
+                        </>
+                      ) : (
+                        `Mark ${manualStudentIds.length} Student(s) Present`
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </CardContent>
           </Card>
         )}
@@ -502,8 +581,8 @@ const AttendanceSession = () => {
                       <div className="flex items-center gap-3">
                         <span className="text-xs text-muted-foreground w-6">{index + 1}</span>
                         <div>
-                          <div className="font-medium text-sm">{student.name}</div>
-                          <div className="text-xs text-muted-foreground">Roll: {student.roll_no}</div>
+                          <div className="font-bold text-sm text-primary">Roll: {student.roll_no}</div>
+                          <div className="text-xs text-muted-foreground">{student.name}</div>
                         </div>
                       </div>
                       <Badge className="bg-green-500/10 text-green-500">Present</Badge>

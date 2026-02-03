@@ -28,33 +28,12 @@ const CameraRecognition = () => {
   const [isTeacher, setIsTeacher] = useState(false);
   const [totalStudents, setTotalStudents] = useState<number>(0);
   const [presentCount, setPresentCount] = useState<number>(0);
+  const [sessionInfo, setSessionInfo] = useState<any>(null);
 
   const switchCamera = () => {
     setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
     setIsCameraReady(false);
     setTimeout(() => setIsCameraReady(true), 100);
-  };
-
-  const handleFinish = async () => {
-    if (!isTeacher) return;
-    try {
-      // Mark session as completed in Supabase
-      const { error } = await supabase
-        .from("sessions")
-        .update({ status: "completed" })
-        .eq("id", sessionId);
-      
-      if (error) throw error;
-      
-      // Clear backend cache
-      fetch(`${API_URL}/clear-session-cache/${sessionId}`, { method: 'POST' }).catch(console.error);
-
-      toast.success("Attendance session completed");
-      navigate(`/teacher/new-attendance/${sessionId}`); // Go back to session details
-    } catch (error) {
-      console.error("Error finishing session:", error);
-      toast.error("Failed to finish session");
-    }
   };
 
   const toggleProcessing = () => {
@@ -176,12 +155,12 @@ const CameraRecognition = () => {
           const fontSize = 14;
           ctx.font = `bold ${fontSize}px font-poppins, sans-serif`;
           
+          const rollText = match.roll_no ? `Roll: ${match.roll_no}` : '';
           const nameText = match.name;
-          const subText = match.roll_no ? `#${match.roll_no}` : '';
           
+          const rollWidth = ctx.measureText(rollText).width;
           const nameWidth = ctx.measureText(nameText).width;
-          const subWidth = ctx.measureText(subText).width;
-          const labelWidth = Math.max(nameWidth, subWidth) + (labelPadding * 2);
+          const labelWidth = Math.max(rollWidth, nameWidth) + (labelPadding * 2);
           const labelHeight = 45;
           
           const labelX = scaledX1 + (width / 2) - (labelWidth / 2);
@@ -210,11 +189,12 @@ const CameraRecognition = () => {
           ctx.restore();
 
           ctx.fillStyle = '#FFFFFF';
-          ctx.fillText(nameText, labelX + (labelWidth/2) - (nameWidth/2), labelY + 22);
+          ctx.font = `bold ${fontSize}px font-poppins, sans-serif`;
+          ctx.fillText(rollText, labelX + (labelWidth/2) - (rollWidth/2), labelY + 22);
           
           ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
           ctx.font = `500 ${fontSize - 2}px font-poppins, sans-serif`;
-          ctx.fillText(subText, labelX + (labelWidth/2) - (subWidth/2), labelY + 38);
+          ctx.fillText(nameText, labelX + (labelWidth/2) - (nameWidth/2), labelY + 38);
         }
       });
     }
@@ -234,6 +214,8 @@ const CameraRecognition = () => {
         navigate("/dashboard");
         return;
       }
+
+      setSessionInfo(session);
 
       if (session.status !== 'active') {
         toast.error("Session is no longer active.");
@@ -374,9 +356,13 @@ const CameraRecognition = () => {
           <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="text-white hover:bg-white/10">
             <X className="h-5 w-5 sm:h-6 sm:w-6" />
           </Button>
-          <div className="flex-1 text-center">
-            <h1 className="text-lg sm:text-xl font-bold font-poppins">Active Session</h1>
-            <p className="text-white/60 text-xs sm:text-sm">Real-time Recognition</p>
+          <div className="flex-1 text-center overflow-hidden">
+            <h1 className="text-lg sm:text-xl font-bold font-poppins truncate">
+              {sessionInfo?.subject || "Active Session"}
+            </h1>
+            <p className="text-white/60 text-[10px] sm:text-xs truncate">
+              {sessionInfo ? `${sessionInfo.branch} • ${sessionInfo.year} • Div ${sessionInfo.division}` : "Real-time Recognition"}
+            </p>
           </div>
           <div className="flex gap-2">
             {isCameraActive && (
@@ -387,16 +373,6 @@ const CameraRecognition = () => {
                 onClick={toggleProcessing}
               >
                 {isProcessing ? 'Stop' : 'Start'}
-              </Button>
-            )}
-            {isTeacher && (
-              <Button 
-                variant="default" 
-                size="sm" 
-                className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg h-9 px-4 font-bold"
-                onClick={handleFinish}
-              >
-                Finish Session
               </Button>
             )}
           </div>
@@ -535,14 +511,15 @@ const CameraRecognition = () => {
                   {lastMatch.status === "already_marked" ? "Already Marked" : "Successfully Marked"}
                 </p>
                 <h3 className="text-white text-xl font-bold">
-                  {lastMatch.name} <span className="text-white/60 font-medium">({lastMatch.roll_no})</span>
+                  Roll: {lastMatch.roll_no}
                 </h3>
+                <p className="text-white/60 font-medium text-sm mt-1">({lastMatch.name})</p>
               </div>
             ) : lastSuccessfullyMarked ? (
-              <div className="bg-white/5 border border-white/10 px-6 py-4 rounded-2xl animate-in fade-in slide-in-from-bottom-4">
+              <div className="bg-white/5 border border-white/10 px-6 py-4 rounded-2xl animate-in fade-in slide-in-from-bottom-4 text-center">
                 <p className="text-white/60 text-sm font-medium mb-1">Recent Activity</p>
-                <h3 className="text-white text-lg font-semibold">
-                  Last student marked: <span className="text-primary">{lastSuccessfullyMarked.roll_no}</span>
+                <h3 className="text-white text-lg font-bold">
+                  Roll: <span className="text-primary">{lastSuccessfullyMarked.roll_no}</span>
                 </h3>
                 <p className="text-white/40 text-xs mt-1">{lastSuccessfullyMarked.name}</p>
               </div>
