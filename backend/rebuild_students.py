@@ -343,10 +343,32 @@ def create_student_records(supabase: Client, students_data: list, detector, reco
     
     return stats
 
+def clear_computer_te_a_students(supabase: Client):
+    """Clear only Computer/TE/A students from the database"""
+    logger.info("Clearing Computer/TE/A students...")
+    try:
+        # Get all Computer/TE/A students
+        result = supabase.table("students").select("id").eq("branch", "Computer").eq("year", "TE").eq("division", "A").execute()
+        
+        if result.data:
+            logger.info(f"Found {len(result.data)} Computer/TE/A students to delete")
+            for student in result.data:
+                try:
+                    supabase.table("students").delete().eq("id", student['id']).execute()
+                except Exception as e:
+                    logger.warning(f"Could not delete student {student['id']}: {e}")
+            logger.info("Successfully cleared Computer/TE/A students")
+        else:
+            logger.info("No Computer/TE/A students found to clear")
+        return True
+    except Exception as e:
+        logger.error(f"Error clearing Computer/TE/A students: {e}")
+        return False
+
 def main():
     """Main execution function"""
     logger.info("="*60)
-    logger.info("STUDENT DATABASE REBUILD SCRIPT")
+    logger.info("STUDENT DATABASE REBUILD SCRIPT - COMPUTER/TE/A ONLY")
     logger.info("="*60)
     
     # Validate configuration
@@ -369,9 +391,13 @@ def main():
         logger.error("No students found in Excel file!")
         return
     
-    # Clear existing data
-    logger.info("\nStep 1: Clearing existing data...")
-    clear_students_table(supabase)
+    # Filter to only Computer/TE/A
+    students_data = [s for s in students_data if s['branch'] == 'Computer' and s['year'] == 'TE' and s['division'] == 'A']
+    logger.info(f"Filtered to {len(students_data)} Computer/TE/A students")
+    
+    # Clear existing Computer/TE/A students
+    logger.info("\nStep 1: Clearing existing Computer/TE/A students...")
+    clear_computer_te_a_students(supabase)
     
     # Create new records
     logger.info("\nStep 2: Creating new student records with face descriptors...")
