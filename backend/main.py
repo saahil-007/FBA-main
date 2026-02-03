@@ -446,6 +446,7 @@ async def recognize(session_id: str, request: Request, file: UploadFile = File(.
         return {
             "status": "success", 
             "detections": detections,
+            "total_students": len(known_embeddings) if known_embeddings else 0,
             "image_size": {"width": img_w, "height": img_h}
         }
     except Exception as e:

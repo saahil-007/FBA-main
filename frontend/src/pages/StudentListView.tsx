@@ -65,13 +65,18 @@ const StudentListView = () => {
   const fetchAllStudents = async () => {
     if (!session) return;
     
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("students")
       .select("id, name, roll_no")
-      .eq("branch", session.branch)
-      .eq("year", session.year)
-      .eq("division", session.division);
+      .ilike("branch", session.branch)
+      .ilike("year", session.year)
+      .ilike("division", session.division);
       
+    if (error) {
+      console.error("Error fetching students:", error);
+      return;
+    }
+
     if (data) {
       setAllStudents(data);
     }
@@ -106,18 +111,27 @@ const StudentListView = () => {
       .select(`
         student_id,
         students (
+          id,
           name,
           roll_no
         )
       `)
       .eq("session_id", sessionId);
 
-    if (!error && data) {
-      const formatted = data.map((item: any) => ({
-        id: item.student_id,
-        name: item.students.name,
-        roll_no: item.students.roll_no
-      }));
+    if (error) {
+      console.error("Error fetching present students:", error);
+      return;
+    }
+
+    if (data) {
+      const formatted = data.map((item: any) => {
+        const student = Array.isArray(item.students) ? item.students[0] : item.students;
+        return {
+          id: item.student_id,
+          name: student?.name || "Unknown",
+          roll_no: student?.roll_no || "N/A"
+        };
+      });
       setPresentStudents(formatted);
     }
   };
@@ -210,7 +224,7 @@ const StudentListView = () => {
         )}
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-4 gap-2">
           <Card className="bg-green-500/10 border-green-500/20">
             <CardContent className="p-3 text-center">
               <div className="text-2xl font-bold text-green-500">{presentStudents.length}</div>
@@ -227,6 +241,14 @@ const StudentListView = () => {
             <CardContent className="p-3 text-center">
               <div className="text-2xl font-bold">{allStudents.length}</div>
               <div className="text-[10px] text-muted-foreground">Total</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-blue-500/10 border-blue-500/20">
+            <CardContent className="p-3 text-center">
+              <div className="text-2xl font-bold text-blue-500">
+                {allStudents.length > 0 ? Math.round((presentStudents.length / allStudents.length) * 100) : 0}%
+              </div>
+              <div className="text-[10px] text-blue-500/80">Att.</div>
             </CardContent>
           </Card>
         </div>

@@ -15,6 +15,7 @@ const SessionDetails = () => {
   const navigate = useNavigate();
   const [session, setSession] = useState<any>(null);
   const [attendance, setAttendance] = useState<any[]>([]);
+  const [totalStudents, setTotalStudents] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<string | null>(null);
 
@@ -35,6 +36,18 @@ const SessionDetails = () => {
       
       if (sessionError) throw sessionError;
       setSession(sessionData);
+
+      // Fetch total students for this session's class
+      const { count, error: countError } = await supabase
+        .from("students")
+        .select("*", { count: 'exact', head: true })
+        .ilike("branch", sessionData.branch)
+        .ilike("year", sessionData.year)
+        .ilike("division", sessionData.division);
+      
+      if (!countError && count !== null) {
+        setTotalStudents(count);
+      }
 
       const response = await fetch(`${API_URL}/sessions/${sessionId}/attendance`);
       if (!response.ok) throw new Error("Failed to fetch attendance");
@@ -142,18 +155,26 @@ const SessionDetails = () => {
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-3 gap-2 mb-4">
+            <div className="grid grid-cols-4 gap-2 mb-4">
               <div className="bg-background rounded-lg p-2 text-center">
                 <div className="text-xl font-bold text-primary">{attendance.length}</div>
                 <div className="text-[10px] text-muted-foreground">Present</div>
               </div>
               <div className="bg-background rounded-lg p-2 text-center">
-                <div className="text-xl font-bold">{session.class_name}</div>
-                <div className="text-[10px] text-muted-foreground">Room</div>
+                <div className="text-xl font-bold text-orange-500">
+                  {totalStudents > 0 ? Math.max(0, totalStudents - attendance.length) : 0}
+                </div>
+                <div className="text-[10px] text-muted-foreground">Absent</div>
               </div>
               <div className="bg-background rounded-lg p-2 text-center">
-                <div className="text-xl font-bold">{session.division}</div>
-                <div className="text-[10px] text-muted-foreground">Div</div>
+                <div className="text-xl font-bold">{totalStudents}</div>
+                <div className="text-[10px] text-muted-foreground">Total</div>
+              </div>
+              <div className="bg-background rounded-lg p-2 text-center">
+                <div className="text-xl font-bold">
+                  {totalStudents > 0 ? Math.round((attendance.length / totalStudents) * 100) : 0}%
+                </div>
+                <div className="text-[10px] text-muted-foreground">Att.</div>
               </div>
             </div>
 

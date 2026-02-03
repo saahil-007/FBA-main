@@ -26,6 +26,8 @@ const CameraRecognition = () => {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [isTeacher, setIsTeacher] = useState(false);
+  const [totalStudents, setTotalStudents] = useState<number>(0);
+  const [presentCount, setPresentCount] = useState<number>(0);
 
   const switchCamera = () => {
     setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
@@ -223,7 +225,7 @@ const CameraRecognition = () => {
       // 1. Check session status and teacher
       const { data: session, error: sessionError } = await supabase
         .from("sessions")
-        .select("status, teacher_id")
+        .select("*")
         .eq("id", sessionId)
         .single();
 
@@ -238,6 +240,22 @@ const CameraRecognition = () => {
         navigate("/dashboard");
         return;
       }
+
+      // Fetch total students and current present count
+      const { count: totalCount } = await supabase
+        .from("students")
+        .select("*", { count: 'exact', head: true })
+        .ilike("branch", session.branch)
+        .ilike("year", session.year)
+        .ilike("division", session.division);
+      
+      const { count: currentCount } = await supabase
+        .from("attendance_records")
+        .select("*", { count: 'exact', head: true })
+        .eq("session_id", sessionId);
+
+      if (totalCount !== null) setTotalStudents(totalCount);
+      if (currentCount !== null) setPresentCount(currentCount);
 
       // 2. Check if current user is the teacher
       const { data: { user } } = await supabase.auth.getUser();
@@ -297,6 +315,11 @@ const CameraRecognition = () => {
       if (result.status === "success") {
         const currentDetections = result.detections || [];
         setDetections(currentDetections);
+        
+        // Update total students if provided by backend
+        if (result.total_students) {
+          setTotalStudents(result.total_students);
+        }
 
         // Track matches for the summary UI and toasts
         const matches = currentDetections.filter((d: any) => d.match).map((d: any) => d.match);
@@ -307,6 +330,9 @@ const CameraRecognition = () => {
           // Show toasts for newly marked students
           const newlyMarked = matches.filter((m: any) => m.status === "marked_now");
           if (newlyMarked.length > 0) {
+            // Update present count locally for immediate feedback
+            setPresentCount(prev => prev + newlyMarked.length);
+
             if (newlyMarked.length === 1) {
               toast.success(`Marked Present: ${newlyMarked[0].name}`, {
                 icon: <UserCheck className="w-5 h-5 text-green-500" />,
@@ -481,7 +507,21 @@ const CameraRecognition = () => {
         </div>
 
         {/* Recognition Status Area */}
-        <div className="space-y-6">
+        <div className="space-y-4">
+          {/* Progress Bar */}
+          <div className="space-y-2">
+            <div className="flex justify-between text-xs font-medium text-white/60">
+              <span>Attendance Progress</span>
+              <span>{presentCount} / {totalStudents} Students</span>
+            </div>
+            <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden border border-white/10">
+              <div 
+                className="h-full bg-primary transition-all duration-500 ease-out"
+                style={{ width: `${totalStudents > 0 ? (presentCount / totalStudents) * 100 : 0}%` }}
+              />
+            </div>
+          </div>
+
           <div className="text-center">
             {lastMatch ? (
               <div className={`px-6 py-4 rounded-2xl animate-in fade-in slide-in-from-bottom-4 border ${

@@ -69,6 +69,12 @@ const AttendanceSession = () => {
   const fetchAllStudents = async () => {
     if (!session) return;
     
+    console.log("Fetching all students for session:", {
+      branch: session.branch,
+      year: session.year,
+      division: session.division
+    });
+
     const cacheKey = `descriptors_${session.branch}_${session.year}_${session.division}`;
     const cachedData = localStorage.getItem(cacheKey);
     
@@ -76,30 +82,35 @@ const AttendanceSession = () => {
     if (cachedData) {
       try {
         students = JSON.parse(cachedData);
+        if (Array.isArray(students) && students.length > 0) {
+          setAllStudents(students);
+        }
       } catch (e) {
         console.error("Cache parse error:", e);
       }
     }
 
-    if (students.length > 0) {
-      setAllStudents(students);
-    }
-
+    // Try case-insensitive match for better compatibility
     const { data, error } = await supabase
       .from("students")
       .select("id, name, roll_no")
-      .eq("branch", session.branch)
-      .eq("year", session.year)
-      .eq("division", session.division);
+      .ilike("branch", session.branch)
+      .ilike("year", session.year)
+      .ilike("division", session.division);
       
     if (error) {
       console.error("Error fetching students:", error);
+      toast.error("Error fetching students list");
       return;
     }
 
-    if (data) {
+    console.log(`Fetched ${data?.length || 0} students from database`);
+
+    if (data && data.length > 0) {
       setAllStudents(data);
       localStorage.setItem(cacheKey, JSON.stringify(data));
+    } else {
+      console.warn("No students found for this session criteria");
     }
   };
 
@@ -170,18 +181,28 @@ const AttendanceSession = () => {
       .select(`
         student_id,
         students (
+          id,
           name,
           roll_no
         )
       `)
       .eq("session_id", sessionId);
 
-    if (!error && data) {
-      const formatted = data.map((item: any) => ({
-        id: item.student_id,
-        name: item.students.name,
-        roll_no: item.students.roll_no
-      }));
+    if (error) {
+      console.error("Error fetching present students:", error);
+      return;
+    }
+
+    if (data) {
+      const formatted = data.map((item: any) => {
+        const student = Array.isArray(item.students) ? item.students[0] : item.students;
+        return {
+          id: item.student_id,
+          name: student?.name || "Unknown",
+          roll_no: student?.roll_no || "N/A"
+        };
+      });
+      console.log(`Fetched ${formatted.length} present students`);
       setPresentStudents(formatted);
     }
   };
@@ -301,22 +322,30 @@ const AttendanceSession = () => {
       <main className="px-4 py-4 max-w-lg mx-auto space-y-4">
         {/* Session Stats */}
         <div className="flex gap-3 overflow-x-auto scrollbar-hide -mx-4 px-4">
-          <Card className="min-w-[100px] flex-1 bg-primary/10 border-primary/20">
+          <Card className="min-w-[80px] flex-1 bg-primary/10 border-primary/20">
             <CardContent className="p-3 text-center">
               <div className="text-2xl font-bold text-primary">{presentStudents.length}</div>
-              <div className="text-xs text-primary/80">Present</div>
+              <div className="text-[10px] text-primary/80">Present</div>
             </CardContent>
           </Card>
-          <Card className="min-w-[100px] flex-1 bg-orange-500/10 border-orange-500/20">
+          <Card className="min-w-[80px] flex-1 bg-orange-500/10 border-orange-500/20">
             <CardContent className="p-3 text-center">
               <div className="text-2xl font-bold text-orange-500">{absentStudents.length}</div>
-              <div className="text-xs text-orange-500/80">Absent</div>
+              <div className="text-[10px] text-orange-500/80">Absent</div>
             </CardContent>
           </Card>
-          <Card className="min-w-[100px] flex-1 bg-card/50">
+          <Card className="min-w-[80px] flex-1 bg-card/50">
             <CardContent className="p-3 text-center">
               <div className="text-2xl font-bold">{allStudents.length}</div>
-              <div className="text-xs text-muted-foreground">Total</div>
+              <div className="text-[10px] text-muted-foreground">Total</div>
+            </CardContent>
+          </Card>
+          <Card className="min-w-[80px] flex-1 bg-blue-500/10 border-blue-500/20">
+            <CardContent className="p-3 text-center">
+              <div className="text-2xl font-bold text-blue-500">
+                {allStudents.length > 0 ? Math.round((presentStudents.length / allStudents.length) * 100) : 0}%
+              </div>
+              <div className="text-[10px] text-blue-500/80">Att.</div>
             </CardContent>
           </Card>
         </div>
