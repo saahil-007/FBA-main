@@ -147,6 +147,19 @@ const AttendanceSession = () => {
       navigate("/dashboard");
       return;
     }
+
+    // Check if session is older than 1 hour and still active
+    if (data.status === 'active') {
+      const createdAt = new Date(data.created_at).getTime();
+      const now = new Date().getTime();
+      const oneHour = 60 * 60 * 1000;
+
+      if (now - createdAt > oneHour) {
+        data.status = 'completed';
+        // Optionally notify the user or update the DB (though backend already handles DB)
+      }
+    }
+
     setSession(data);
     setLoading(false);
   };
@@ -196,6 +209,29 @@ const AttendanceSession = () => {
     const url = getShareUrl(path);
     navigator.clipboard.writeText(url);
     toast.success("Link copied to clipboard");
+  };
+
+  const handleShare = async (path: string, title: string) => {
+    const url = getShareUrl(path);
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: title,
+          text: `Join the attendance session for ${session?.subject}`,
+          url: url,
+        });
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          copyToClipboard(path);
+        }
+      }
+    } else {
+      copyToClipboard(path);
+    }
+  };
+
+  const openInNewTab = (path: string) => {
+    window.open(path, '_blank');
   };
 
   const handleExport = async (format: 'csv' | 'pdf') => {
@@ -327,26 +363,48 @@ const AttendanceSession = () => {
 
         {/* Quick Links */}
         <Card className="bg-card/50">
-          <CardContent className="p-4">
+          <CardContent className="p-4 space-y-4">
             <div className="grid grid-cols-2 gap-2">
               {session?.status === 'active' ? (
                 <>
-                  <Button 
-                    variant="default"
-                    className="h-20 flex-col gap-1"
-                    onClick={() => navigate(`/student/camera/${sessionId}`)}
-                  >
-                    <Camera className="w-6 h-6" />
-                    <span className="text-xs">Open Camera</span>
-                  </Button>
-                  <Button 
-                    variant="outline"
-                    className="h-20 flex-col gap-1"
-                    onClick={() => navigate(`/student/view/${sessionId}`)}
-                  >
-                    <Users className="w-6 h-6" />
-                    <span className="text-xs">View List</span>
-                  </Button>
+                  <div className="space-y-2">
+                    <Button 
+                      variant="default"
+                      className="w-full h-20 flex-col gap-1"
+                      onClick={() => openInNewTab(`/student/camera/${sessionId}`)}
+                    >
+                      <Camera className="w-6 h-6" />
+                      <span className="text-xs">Open Camera</span>
+                    </Button>
+                    <Button 
+                        variant="secondary"
+                        size="sm"
+                        className="w-full gap-2 h-9"
+                        onClick={() => handleShare(`/student/camera/${sessionId}`, "Attendance Camera")}
+                      >
+                        <Share2 className="w-4 h-4" />
+                        Share Camera
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      <Button 
+                        variant="outline"
+                        className="w-full h-20 flex-col gap-1"
+                        onClick={() => openInNewTab(`/student/view/${sessionId}`)}
+                      >
+                        <Users className="w-6 h-6" />
+                        <span className="text-xs">View List</span>
+                      </Button>
+                      <Button 
+                        variant="secondary"
+                        size="sm"
+                        className="w-full gap-2 h-9"
+                        onClick={() => handleShare(`/student/view/${sessionId}`, "Attendance List")}
+                      >
+                        <Share2 className="w-4 h-4" />
+                        Share List
+                      </Button>
+                  </div>
                 </>
               ) : (
                 <>

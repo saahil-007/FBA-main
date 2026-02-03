@@ -3,7 +3,7 @@ import logging
 import io
 import asyncio
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from typing import List, Optional
@@ -158,6 +158,42 @@ async def retry_init():
         return {"message": "Initialization retrying..."}
     return {"message": f"Initialization status is {init_status}"}
 
+async def check_session_validity(session_id: str):
+    """
+    Checks if a session is valid (active and < 1 hour old).
+    If it's older than 1 hour, updates its status to 'completed' in the database.
+    Returns the session data or None if not found.
+    """
+    try:
+        resp = supabase.table("sessions").select("*").eq("id", session_id).execute()
+        if not resp.data:
+            return None
+        
+        session = resp.data[0]
+        if session.get("status") != "active":
+            return session
+            
+        # Check time limit (1 hour)
+        created_at_str = session.get("created_at")
+        if created_at_str:
+            # Supabase returns ISO format strings
+            created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+            now = datetime.now(timezone.utc)
+            
+            if now - created_at > timedelta(hours=1):
+                logger.info(f"Session {session_id} expired (created at {created_at_str}). Closing it.")
+                # Update DB
+                supabase.table("sessions").update({"status": "completed"}).eq("id", session_id).execute()
+                session["status"] = "completed"
+                # Clear cache
+                if embedding_manager:
+                    embedding_manager.clear_cache(session_id)
+        
+        return session
+    except Exception as e:
+        logger.error(f"Error checking session validity for {session_id}: {e}")
+        return None
+
 @app.get("/")
 async def root():
     return {"message": "FBA Backend is running"}
@@ -209,10 +245,15 @@ async def create_session(request: SessionCreate):
         # 2. Instantly load descriptors into local cache
         embeddings = await embedding_manager.load_session_embeddings(session_id)
         
+        count = len(embeddings) if embeddings else 0
+        if count == 0:
+            logger.warning(f"Session {session_id} created but NO students found for {request.branch} {request.year} {request.division}")
+        
         return {
             "status": "success",
             "session_id": session_id,
-            "descriptors_loaded": len(embeddings) if embeddings else 0
+            "descriptors_loaded": count,
+            "message": "Session created. WARNING: No students found in this class." if count == 0 else "Session created successfully."
         }
     except Exception as e:
         logger.exception("Error in create_session")
@@ -240,11 +281,11 @@ async def load_session_embeddings(session_id: str):
 async def check_access(session_id: str, request: Request):
     """Simplified access check (Device lock removed)"""
     try:
-        session_resp = supabase.table("sessions").select("status").eq("id", session_id).execute()
-        if not session_resp.data:
+        session = await check_session_validity(session_id)
+        if not session:
             raise HTTPException(status_code=404, detail="Session not found")
             
-        status = session_resp.data[0].get("status")
+        status = session.get("status")
         if status != "active":
             return {"status": "denied", "message": "Session is no longer active."}
             
@@ -269,14 +310,14 @@ async def recognize(session_id: str, request: Request, file: UploadFile = File(.
     
     # 1. Check if session is active
     try:
-        session_resp = supabase.table("sessions").select("status").eq("id", session_id).execute()
-        if not session_resp.data:
+        session = await check_session_validity(session_id)
+        if not session:
             raise HTTPException(status_code=404, detail="Session not found")
         
-        if session_resp.data[0].get("status") != "active":
+        if session.get("status") != "active":
              raise HTTPException(
                  status_code=403, 
-                 detail=f"Session is no longer active (Status: {session_resp.data[0].get('status')}). Attendance cannot be marked."
+                 detail=f"Session is no longer active (Status: {session.get('status')}). Attendance cannot be marked."
              )
     except HTTPException:
         raise
@@ -303,19 +344,34 @@ async def recognize(session_id: str, request: Request, file: UploadFile = File(.
         # 3. Detection (All faces - up to 25)
         bboxes, kpss = detector.detect(img, max_num=25)
         
+        logger.info(f"Detections in session {session_id}: {len(bboxes)} faces found.")
+        
         if not bboxes:
             return {"status": "success", "detections": [], "message": "No faces detected"}
 
         # 4. Recognition (Batch)
         input_embeddings = recognizer.get_embeddings(img, bboxes, kpss)
         
+        logger.info(f"Generated {len(input_embeddings)} embeddings for comparison.")
+        if known_embeddings:
+            logger.info(f"Comparing against {len(known_embeddings)} known students.")
+        else:
+            logger.warning("No known embeddings loaded for this session.")
+
         detections = []
         img_h, img_w = img.shape[:2]
 
         for i, input_embedding in enumerate(input_embeddings):
             matches = []
+            max_sim = -1.0
+            best_match_id = None
+            
             for student_id, data in known_embeddings.items():
                 similarity = recognizer.compute_similarity(input_embedding, data["embedding"])
+                if similarity > max_sim:
+                    max_sim = similarity
+                    best_match_id = student_id
+                
                 if similarity > RECOGNITION_THRESHOLD:
                     matches.append({
                         "id": student_id, 
@@ -323,6 +379,10 @@ async def recognize(session_id: str, request: Request, file: UploadFile = File(.
                         "roll_no": data["roll_no"],
                         "similarity": float(similarity)
                     })
+            
+            logger.info(f"Face {i}: Best similarity found: {max_sim:.4f} (Threshold: {RECOGNITION_THRESHOLD})")
+            if matches:
+                logger.info(f"Face {i}: Found {len(matches)} matches above threshold.")
             
             matches.sort(key=lambda x: x["similarity"], reverse=True)
             
@@ -403,7 +463,23 @@ async def get_sessions():
     """Fetch all sessions sorted by created_at"""
     try:
         resp = supabase.table("sessions").select("*").order("created_at", desc=True).execute()
-        return resp.data
+        sessions = resp.data
+        
+        # Auto-close expired sessions
+        now = datetime.now(timezone.utc)
+        updated = False
+        for session in sessions:
+            if session.get("status") == "active":
+                created_at_str = session.get("created_at")
+                if created_at_str:
+                    created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                    if now - created_at > timedelta(hours=1):
+                        logger.info(f"Closing expired session {session['id']} during fetch")
+                        supabase.table("sessions").update({"status": "completed"}).eq("id", session["id"]).execute()
+                        session["status"] = "completed"
+                        updated = True
+        
+        return sessions
     except Exception as e:
         logger.exception("Error fetching sessions")
         raise HTTPException(status_code=500, detail=str(e))

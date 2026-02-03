@@ -25,22 +25,33 @@ class EmbeddingManager:
             
             session = session_resp.data
             branch, year, division = session["branch"], session["year"], session["division"]
+            logger.info(f"Session {session_id} details: Branch={branch}, Year={year}, Div={division}")
 
             # 2. Fetch all students in that class with their pre-computed descriptors
+            # Use case-insensitive matching for robustness (COMPUTER vs Computer)
             students_resp = self.supabase.table("students").select("id, name, roll_no, face_descriptor")\
-                .eq("branch", branch)\
-                .eq("year", year)\
-                .eq("division", division)\
+                .ilike("branch", branch)\
+                .ilike("year", year)\
+                .ilike("division", division)\
                 .execute()
             students = students_resp.data
+            
+            if not students:
+                logger.warning(f"No students found for {branch} {year} {division}")
+                self.cache[session_id] = {}
+                return {}
 
+            logger.info(f"Found {len(students)} students in class. Processing descriptors...")
             embeddings = {}
             for student in students:
                 student_id = student["id"]
-                if student["face_descriptor"]:
+                if student.get("face_descriptor"):
                     try:
-                        # Load the descriptor directly from JSON
-                        desc = json.loads(student["face_descriptor"])
+                        # Handle both string (JSON) and list (already parsed) formats
+                        desc = student["face_descriptor"]
+                        if isinstance(desc, str):
+                            desc = json.loads(desc)
+                        
                         embeddings[student_id] = {
                             "name": student["name"], 
                             "roll_no": student.get("roll_no", "N/A"),
@@ -48,6 +59,8 @@ class EmbeddingManager:
                         }
                     except Exception as e:
                         logger.warning(f"Malformed descriptor for student {student_id}: {e}")
+                else:
+                    logger.debug(f"Student {student_id} ({student['name']}) has no face_descriptor.")
             
             # 3. Store in local session-exclusive cache
             self.cache[session_id] = embeddings

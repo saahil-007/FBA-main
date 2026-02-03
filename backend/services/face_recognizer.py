@@ -21,9 +21,12 @@ class FaceRecognizer:
             
         self.session = ort.InferenceSession(model_path, sess_options, providers=providers)
         
-        self.input_name = self.session.get_inputs()[0].name
+        input_meta = self.session.get_inputs()[0]
+        self.input_name = input_meta.name
+        self.input_shape = input_meta.shape
         self.input_size = (112, 112)
-        logger.info(f"Recognizer initialized with providers: {providers}")
+        logger.info(f"Recognizer initialized. Input name: {self.input_name}, Input shape: {self.input_shape}")
+        logger.info(f"Providers: {providers}")
 
     def align_face(self, img, kps):
         # Standard template for 112x112 alignment (InsightFace style)
@@ -87,26 +90,54 @@ class FaceRecognizer:
         if not face_imgs:
             return []
             
-        # 2. Test Time Augmentation (TTA) with Batch processing
-        # We process all faces: Original and Flipped in one single batch
+        # Prepare all images for TTA (Original + Flipped)
         all_images = []
         for face_img in face_imgs:
             all_images.append(face_img)
             all_images.append(cv2.flip(face_img, 1))
-            
-        # Create a batch of 2 * N
-        batch = np.stack(all_images, axis=0) # (2N, 112, 112, 3)
-        
-        # Preprocess batch
-        blob = cv2.dnn.blobFromImages(batch, 1.0/127.5, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
-        
-        # Run inference once for all faces
-        net_out = self.session.run(None, {self.input_name: blob})[0] # (2N, 512)
-        
+
+        # Run inference for all faces
         embeddings = []
+        
+        # Check if model supports batching (first dimension is dynamic or > 1)
+        # Force supports_batching to False if model specifically expects batch size 1
+        batch_dim = self.input_shape[0]
+        supports_batching = (not isinstance(batch_dim, int)) or (batch_dim > 1) or (batch_dim == -1)
+        
+        # Override: If we saw warnings about shape mismatch, it's safer to run sequential
+        # Most InsightFace models work best with batch size 1 in ONNX
+        if batch_dim == 1 or batch_dim == '1':
+            supports_batching = False
+            
+        if supports_batching:
+            try:
+                # Batch inference
+                blob = cv2.dnn.blobFromImages(all_images, 1.0/127.5, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
+                net_out = self.session.run(None, {self.input_name: blob})[0]
+                logger.debug(f"Batch inference output shape: {net_out.shape}")
+            except Exception as e:
+                logger.warning(f"Batch inference failed, falling back to sequential: {e}")
+                supports_batching = False
+
+        if not supports_batching:
+            # Sequential inference
+            logger.info("Running sequential inference for faces (TTA enabled)")
+            net_out_list = []
+            for face_img in all_images:
+                # blobFromImage returns (1, 3, 112, 112)
+                blob = cv2.dnn.blobFromImage(face_img, 1.0/127.5, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
+                out = self.session.run(None, {self.input_name: blob})[0]
+                net_out_list.append(out.flatten())
+            net_out = np.array(net_out_list)
+            logger.debug(f"Sequential inference combined output shape: {net_out.shape}")
+
         for i in range(len(face_imgs)):
             # Combine Original (i*2) and Flipped (i*2 + 1)
-            embedding = net_out[i*2] + net_out[i*2+1]
+            # Use TTA: Average the embeddings of original and flipped images
+            emb_orig = net_out[i*2].flatten()
+            emb_flip = net_out[i*2+1].flatten()
+            
+            embedding = emb_orig + emb_flip
             norm = np.linalg.norm(embedding)
             if norm > 0:
                 embedding /= norm
@@ -120,7 +151,7 @@ class FaceRecognizer:
         return res[0] if res else None
 
     def compute_similarity(self, feat1, feat2):
-        a = np.array(feat1)
-        b = np.array(feat2)
+        a = np.array(feat1).flatten()
+        b = np.array(feat2).flatten()
         # Both are normalized, so dot product is cosine similarity
-        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-6)
+        return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-6))

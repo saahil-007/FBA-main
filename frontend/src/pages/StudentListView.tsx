@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Loader2, CheckCircle2, Users, FileText, Table as TableIcon } from "lucide-react";
+import { Loader2, CheckCircle2, Users, FileText, Table as TableIcon, Camera } from "lucide-react";
 
 import { API_URL } from "@/config";
 
@@ -84,7 +84,19 @@ const StudentListView = () => {
       .eq("id", sessionId)
       .single();
 
-    if (data) setSession(data);
+    if (data) {
+      // Check if session is older than 1 hour and still active
+      if (data.status === 'active') {
+        const createdAt = new Date(data.created_at).getTime();
+        const now = new Date().getTime();
+        const oneHour = 60 * 60 * 1000;
+
+        if (now - createdAt > oneHour) {
+          data.status = 'completed';
+        }
+      }
+      setSession(data);
+    }
     setLoading(false);
   };
 
@@ -185,6 +197,17 @@ const StudentListView = () => {
             {new Date(session.created_at).toLocaleDateString()}
           </p>
         </div>
+
+        {/* Actions */}
+        {session.status === 'active' && (
+          <Button 
+            className="w-full h-12 gap-2" 
+            onClick={() => window.open(`/student/camera/${sessionId}`, '_blank')}
+          >
+            <Camera className="w-5 h-5" />
+            Open Camera to Mark Attendance
+          </Button>
+        )}
 
         {/* Stats Cards */}
         <div className="grid grid-cols-3 gap-2">
