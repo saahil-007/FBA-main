@@ -7,9 +7,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Loader2, Plus, LogOut, User, ArrowLeft } from "lucide-react";
+import { Loader2, Plus, LogOut, User, ArrowLeft, ChevronRight } from "lucide-react";
 
 import { API_URL } from "@/config";
+import { MobileBottomNav } from "@/components/MobileBottomNav";
 
 const NewAttendance = () => {
   const [loading, setLoading] = useState(true);
@@ -167,56 +168,57 @@ const NewAttendance = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Navbar */}
-      <nav className="border-b border-border bg-card/50 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold font-poppins">FBA</h1>
-            <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">Teacher</span>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-4">
-            <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground">
-              <User className="w-4 h-4" />
-              <span>{user?.email}</span>
-            </div>
-            <Button variant="ghost" size="sm" onClick={handleLogout} className="px-2 sm:px-3">
-              <LogOut className="w-4 h-4 sm:mr-2" />
-              <span className="hidden sm:inline">Sign Out</span>
+    <div className="min-h-screen bg-background pb-20 md:pb-0">
+      {/* Mobile Header */}
+      <header className="sticky top-0 z-50 bg-background/95 backdrop-blur-xl border-b border-border safe-top">
+        <div className="flex items-center justify-between h-14 px-4">
+          <div className="flex items-center gap-3">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => navigate("/teacher/dashboard")}
+              className="h-9 w-9"
+            >
+              <ArrowLeft className="h-5 w-5" />
             </Button>
+            <h1 className="text-lg font-bold">New Session</h1>
           </div>
-        </div>
-      </nav>
-
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-12">
-        <div className="mb-6 flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/teacher/dashboard")}>
-            <ArrowLeft className="h-5 w-5" />
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={handleLogout}
+            className="h-9 w-9"
+          >
+            <LogOut className="h-4 w-4" />
           </Button>
-          <h2 className="text-2xl font-bold tracking-tight">Configure New Session</h2>
         </div>
+      </header>
 
-        <Card className="border-border bg-card/50 backdrop-blur-sm shadow-xl">
-          <CardHeader>
-            <CardTitle>Class Details</CardTitle>
-            <CardDescription>Select the class details to begin marking attendance.</CardDescription>
-          </CardHeader>
-          <form onSubmit={handleCreateSession}>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+      <main className="px-4 py-4 max-w-lg mx-auto">
+        <form onSubmit={handleCreateSession} className="space-y-4">
+          {/* Class Configuration */}
+          <Card className="bg-card/50">
+            <CardHeader className="p-4 pb-2">
+              <CardTitle className="text-base">Class Configuration</CardTitle>
+              <CardDescription className="text-xs">
+                Select the class details
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
                 {/* Branch */}
-                <div className="space-y-2">
-                  <Label>Branch</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Branch</Label>
                   <Select onValueChange={(v) => setFormData({...formData, branch: v})}>
-                    <SelectTrigger className="bg-background border-border">
-                      <SelectValue placeholder="Select Branch" />
+                    <SelectTrigger className="h-11 bg-background border-border text-sm">
+                      <SelectValue placeholder="Select" />
                     </SelectTrigger>
                     <SelectContent>
                       {branches.map(b => (
@@ -227,11 +229,11 @@ const NewAttendance = () => {
                 </div>
 
                 {/* Year */}
-                <div className="space-y-2">
-                  <Label>Academic Year</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Year</Label>
                   <Select onValueChange={(v) => setFormData({...formData, year: v})}>
-                    <SelectTrigger className="bg-background border-border">
-                      <SelectValue placeholder="Select Year" />
+                    <SelectTrigger className="h-11 bg-background border-border text-sm">
+                      <SelectValue placeholder="Select" />
                     </SelectTrigger>
                     <SelectContent>
                       {years.map(y => (
@@ -242,11 +244,11 @@ const NewAttendance = () => {
                 </div>
 
                 {/* Division */}
-                <div className="space-y-2">
-                  <Label>Division</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Division</Label>
                   <Select onValueChange={(v) => setFormData({...formData, division: v})}>
-                    <SelectTrigger className="bg-background border-border">
-                      <SelectValue placeholder="Select Division" />
+                    <SelectTrigger className="h-11 bg-background border-border text-sm">
+                      <SelectValue placeholder="Select" />
                     </SelectTrigger>
                     <SelectContent>
                       {divisions.map(d => (
@@ -256,27 +258,58 @@ const NewAttendance = () => {
                   </Select>
                 </div>
 
-                {/* Subject */}
-                <div className="space-y-2">
-                  <Label>Subject</Label>
-                  <Select onValueChange={(v) => setFormData({...formData, subject: v})}>
-                    <SelectTrigger className="bg-background border-border">
-                      <SelectValue placeholder="Select Subject" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {subjects.map(s => (
-                        <SelectItem key={s.code} value={s.code}>{s.name} ({s.code})</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                {/* Classroom */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Room No.</Label>
+                  <Input
+                    type="number"
+                    placeholder="201-1110"
+                    min="201"
+                    max="1110"
+                    className="h-11 bg-background border-border text-sm"
+                    value={formData.classroom}
+                    onChange={(e) => setFormData({...formData, classroom: e.target.value})}
+                    required
+                  />
                 </div>
+              </div>
+            </CardContent>
+          </Card>
 
+          {/* Subject & Time */}
+          <Card className="bg-card/50">
+            <CardHeader className="p-4 pb-2">
+              <CardTitle className="text-base">Subject & Time</CardTitle>
+              <CardDescription className="text-xs">
+                Configure the session details
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 space-y-4">
+              {/* Subject */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Subject</Label>
+                <Select onValueChange={(v) => setFormData({...formData, subject: v})}>
+                  <SelectTrigger className="h-11 bg-background border-border text-sm">
+                    <SelectValue placeholder="Select Subject" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px]">
+                    {subjects.map(s => (
+                      <SelectItem key={s.code} value={s.code} className="text-sm">
+                        <span className="font-medium">{s.code}</span>
+                        <span className="text-muted-foreground ml-2">{s.name}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
                 {/* Start Time */}
-                <div className="space-y-2">
-                  <Label>Start Time</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Start Time</Label>
                   <input
                     type="time"
-                    className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex h-11 w-full rounded-md border border-border bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                     value={formData.startTime}
                     onChange={(e) => setFormData({...formData, startTime: e.target.value})}
                     required
@@ -284,14 +317,14 @@ const NewAttendance = () => {
                 </div>
 
                 {/* Duration */}
-                <div className="space-y-2">
-                  <Label>Duration (Hours)</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Duration</Label>
                   <Select 
                     value={formData.duration} 
                     onValueChange={(v) => setFormData({...formData, duration: v})}
                   >
-                    <SelectTrigger className="bg-background border-border">
-                      <SelectValue placeholder="Select Duration" />
+                    <SelectTrigger className="h-11 bg-background border-border text-sm">
+                      <SelectValue placeholder="Duration" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="1">1 Hour</SelectItem>
@@ -300,31 +333,26 @@ const NewAttendance = () => {
                   </Select>
                 </div>
               </div>
-
-              {/* Classroom */}
-              <div className="space-y-2">
-                <Label>Classroom / Room No. (201-1110)</Label>
-                <Input
-                  type="number"
-                  placeholder="Enter Room No."
-                  min="201"
-                  max="1110"
-                  className="bg-background border-border"
-                  value={formData.classroom}
-                  onChange={(e) => setFormData({...formData, classroom: e.target.value})}
-                  required
-                />
-              </div>
             </CardContent>
-            <CardFooter>
-              <Button type="submit" className="w-full h-12 text-base" disabled={submitting}>
-                {submitting ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : <Plus className="w-5 h-5 mr-2" />}
+            <CardFooter className="p-4 pt-0">
+              <Button 
+                type="submit" 
+                className="w-full h-12 text-sm font-semibold"
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                ) : (
+                  <Plus className="w-5 h-5 mr-2" />
+                )}
                 Create Attendance Session
               </Button>
             </CardFooter>
-          </form>
-        </Card>
+          </Card>
+        </form>
       </main>
+
+      <MobileBottomNav />
     </div>
   );
 };

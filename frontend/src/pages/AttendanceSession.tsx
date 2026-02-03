@@ -13,10 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-
 import { API_URL } from "@/config";
+import { MobileBottomNav } from "@/components/MobileBottomNav";
 
 const AttendanceSession = () => {
   const { sessionId } = useParams();
@@ -25,7 +23,6 @@ const AttendanceSession = () => {
   const [exporting, setExporting] = useState<string | null>(null);
   const [session, setSession] = useState<any>(null);
   const [presentStudents, setPresentStudents] = useState<any[]>([]);
-
   const [manualStudentId, setManualStudentId] = useState("");
   const [allStudents, setAllStudents] = useState<any[]>([]);
 
@@ -38,7 +35,6 @@ const AttendanceSession = () => {
   useEffect(() => {
     if (!sessionId || allStudents.length === 0) return;
 
-    console.log(`Starting real-time subscription for session: ${sessionId}`);
     const channel = supabase
       .channel(`attendance-${sessionId}`)
       .on(
@@ -50,7 +46,6 @@ const AttendanceSession = () => {
           filter: `session_id=eq.${sessionId}`
         },
         (payload) => {
-          console.log("Real-time insert received:", payload.new);
           const newRecord = payload.new;
           const student = allStudents.find(s => s.id === newRecord.student_id);
           
@@ -64,12 +59,9 @@ const AttendanceSession = () => {
           }
         }
       )
-      .subscribe((status) => {
-        console.log(`Subscription status: ${status}`);
-      });
+      .subscribe();
 
     return () => {
-      console.log(`Cleaning up subscription for session: ${sessionId}`);
       supabase.removeChannel(channel);
     };
   }, [sessionId, allStudents]);
@@ -77,7 +69,6 @@ const AttendanceSession = () => {
   const fetchAllStudents = async () => {
     if (!session) return;
     
-    // Try to get from cache first
     const cacheKey = `descriptors_${session.branch}_${session.year}_${session.division}`;
     const cachedData = localStorage.getItem(cacheKey);
     
@@ -85,13 +76,11 @@ const AttendanceSession = () => {
     if (cachedData) {
       try {
         students = JSON.parse(cachedData);
-        console.log(`Loaded ${students.length} students from browser cache`);
       } catch (e) {
         console.error("Cache parse error:", e);
       }
     }
 
-    // Always fetch from DB to ensure it's up to date, but update state immediately if we have cache
     if (students.length > 0) {
       setAllStudents(students);
     }
@@ -109,7 +98,6 @@ const AttendanceSession = () => {
     }
 
     if (data) {
-      console.log(`Fetched ${data.length} students from database`);
       setAllStudents(data);
       localStorage.setItem(cacheKey, JSON.stringify(data));
     }
@@ -122,7 +110,6 @@ const AttendanceSession = () => {
   const handleManualMark = async () => {
     if (!manualStudentId) return;
     
-    // Find the student in allStudents to update presentStudents optimistically
     const student = allStudents.find(s => s.id === manualStudentId);
     
     const { error } = await supabase
@@ -139,7 +126,6 @@ const AttendanceSession = () => {
       toast.success("Student marked present");
       setManualStudentId("");
       
-      // Optimistic update for presentStudents
       if (student) {
         setPresentStudents(prev => {
           if (prev.some(p => p.id === student.id)) return prev;
@@ -178,7 +164,6 @@ const AttendanceSession = () => {
       .eq("session_id", sessionId);
 
     if (!error && data) {
-      // Flatten the result
       const formatted = data.map((item: any) => ({
         id: item.student_id,
         name: item.students.name,
@@ -198,9 +183,7 @@ const AttendanceSession = () => {
       toast.error("Failed to end session");
     } else {
       toast.success("Session ended and saved");
-      // Clear backend cache
       fetch(`${API_URL}/clear-session-cache/${sessionId}`, { method: 'POST' }).catch(console.error);
-      // Update local state to show exports immediately
       setSession(prev => ({ ...prev, status: 'completed' }));
     }
   };
@@ -242,242 +225,210 @@ const AttendanceSession = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );
   }
 
+  const absentStudents = allStudents.filter(
+    s => !presentStudents.some(p => p.id === s.id)
+  );
+
   return (
-    <div className="min-h-screen bg-background pb-20">
+    <div className="min-h-screen bg-background pb-20 md:pb-0">
       {/* Header */}
-      <div className="border-b border-border bg-card/50 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 sm:gap-4 overflow-hidden">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/dashboard")} className="shrink-0">
+      <header className="sticky top-0 z-50 bg-background/95 backdrop-blur-xl border-b border-border safe-top">
+        <div className="flex items-center justify-between h-14 px-4">
+          <div className="flex items-center gap-3 overflow-hidden">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => navigate("/dashboard")}
+              className="h-9 w-9 shrink-0"
+            >
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div className="truncate">
-              <h1 className="text-sm sm:text-lg font-bold font-poppins truncate">{session.subject}</h1>
-              <p className="text-[10px] sm:text-xs text-muted-foreground truncate">{session.branch} • {session.year} • Div {session.division}</p>
+              <h1 className="text-sm font-bold truncate">{session?.subject || "Session"}</h1>
+              <p className="text-[10px] text-muted-foreground truncate">
+                {session?.branch} • {session?.year} • Div {session?.division}
+              </p>
             </div>
           </div>
-          <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 shrink-0 text-[10px] sm:text-xs">
-            {session.status.toUpperCase()}
+          <Badge className={session?.status === 'active' ? 'bg-green-500/10 text-green-500' : 'bg-blue-500/10 text-blue-500'}>
+            {session?.status === 'active' ? 'Active' : 'Completed'}
           </Badge>
         </div>
-      </div>
+      </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-12 space-y-6 sm:space-y-8">
-        {/* Manual Verification Section */}
-        <Card className="border-border bg-card/50 backdrop-blur-xl">
-          <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-2">
-            <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-              <UserCheck className="w-5 h-5 text-primary" />
-              Manual Verification
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 sm:p-6 pt-0 sm:pt-0 space-y-4">
-            <div className="flex gap-2">
+      <main className="px-4 py-4 max-w-lg mx-auto space-y-4">
+        {/* Session Stats */}
+        <div className="flex gap-3 overflow-x-auto scrollbar-hide -mx-4 px-4">
+          <Card className="min-w-[100px] flex-1 bg-primary/10 border-primary/20">
+            <CardContent className="p-3 text-center">
+              <div className="text-2xl font-bold text-primary">{presentStudents.length}</div>
+              <div className="text-xs text-primary/80">Present</div>
+            </CardContent>
+          </Card>
+          <Card className="min-w-[100px] flex-1 bg-orange-500/10 border-orange-500/20">
+            <CardContent className="p-3 text-center">
+              <div className="text-2xl font-bold text-orange-500">{absentStudents.length}</div>
+              <div className="text-xs text-orange-500/80">Absent</div>
+            </CardContent>
+          </Card>
+          <Card className="min-w-[100px] flex-1 bg-card/50">
+            <CardContent className="p-3 text-center">
+              <div className="text-2xl font-bold">{allStudents.length}</div>
+              <div className="text-xs text-muted-foreground">Total</div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Manual Marking */}
+        {session?.status === 'active' && (
+          <Card className="bg-card/50">
+            <CardHeader className="p-4 pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <UserCheck className="w-4 h-4 text-primary" />
+                Manual Marking
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 pt-0 space-y-3">
               <Select value={manualStudentId} onValueChange={setManualStudentId}>
-                <SelectTrigger className="flex-1">
-                  <SelectValue placeholder="Select Student" />
+                <SelectTrigger className="h-11">
+                  <SelectValue placeholder="Select student..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {allStudents
-                    .filter(s => !presentStudents.some(ps => ps.id === s.id))
-                    .sort((a,b) => a.roll_no.localeCompare(b.roll_no))
+                  {absentStudents
+                    .sort((a, b) => a.roll_no.localeCompare(b.roll_no))
                     .map(s => (
                       <SelectItem key={s.id} value={s.id}>
                         [{s.roll_no}] {s.name}
                       </SelectItem>
                     ))}
-                  {allStudents.filter(s => !presentStudents.some(ps => ps.id === s.id)).length === 0 && (
+                  {absentStudents.length === 0 && (
                     <div className="p-2 text-sm text-center text-muted-foreground">
-                      No students found
+                      All students marked
                     </div>
                   )}
                 </SelectContent>
               </Select>
-              <Button onClick={handleManualMark} disabled={!manualStudentId} className="shrink-0">
+              <Button 
+                onClick={handleManualMark} 
+                disabled={!manualStudentId}
+                className="w-full h-11"
+              >
                 Mark Present
               </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Quick Links */}
+        <Card className="bg-card/50">
+          <CardContent className="p-4">
+            <div className="grid grid-cols-2 gap-2">
+              {session?.status === 'active' ? (
+                <>
+                  <Button 
+                    variant="default"
+                    className="h-20 flex-col gap-1"
+                    onClick={() => navigate(`/student/camera/${sessionId}`)}
+                  >
+                    <Camera className="w-6 h-6" />
+                    <span className="text-xs">Open Camera</span>
+                  </Button>
+                  <Button 
+                    variant="outline"
+                    className="h-20 flex-col gap-1"
+                    onClick={() => navigate(`/student/view/${sessionId}`)}
+                  >
+                    <Users className="w-6 h-6" />
+                    <span className="text-xs">View List</span>
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button 
+                    variant="outline" 
+                    className="h-14 gap-2"
+                    onClick={() => handleExport('csv')}
+                    disabled={exporting !== null}
+                  >
+                    {exporting === 'csv' ? <Loader2 className="h-4 w-4 animate-spin" /> : <TableIcon className="h-4 w-4" />}
+                    CSV
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    className="h-14 gap-2"
+                    onClick={() => handleExport('pdf')}
+                    disabled={exporting !== null}
+                  >
+                    {exporting === 'pdf' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                    PDF
+                  </Button>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
 
-        {/* Quick Links */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {session.status !== 'completed' ? (
-            <Card className="border-border bg-card/50">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Camera className="w-5 h-5 text-primary" />
-                  Recognition Camera
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">Open this on a tablet or phone to start the facial recognition scanner.</p>
-                <div className="flex gap-2">
-                  <Button className="flex-1" onClick={() => navigate(`/student/camera/${sessionId}`)}>
-                    Open Camera
-                  </Button>
-                  <a 
-                    href={getShareUrl(`/student/camera/${sessionId}`)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 w-10 shrink-0"
-                    title="Open in new tab"
-                  >
-                    <LinkIcon className="w-4 h-4" />
-                  </a>
-                  <Button variant="outline" size="icon" onClick={() => copyToClipboard(`/student/camera/${sessionId}`)} title="Copy link">
-                    <Share2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="border-primary/20 bg-primary/5 backdrop-blur-xl">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2 text-primary">
-                  <CheckCircle2 className="w-5 h-5" />
-                  Session Completed
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">This session has been finished. You can now export the final attendance records.</p>
-                <div className="flex gap-2">
-                  <Button variant="outline" className="flex-1 gap-2" onClick={() => handleExport('csv')}>
-                    <TableIcon className="w-4 h-4" /> Export CSV
-                  </Button>
-                  <Button variant="outline" className="flex-1 gap-2" onClick={() => handleExport('pdf')}>
-                    <FileText className="w-4 h-4" /> Export PDF
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          <Card className="border-border bg-card/50">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Users className="w-5 h-5 text-primary" />
-                Student View
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">Share this link with students to view the live attendance list.</p>
-              <div className="flex gap-2">
-                <Button variant="secondary" className="flex-1" onClick={() => navigate(`/student/view/${sessionId}`)}>
-                  View List
-                </Button>
-                <a 
-                  href={getShareUrl(`/student/view/${sessionId}`)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 w-10 shrink-0"
-                  title="Open in new tab / Right-click for options"
-                >
-                  <LinkIcon className="w-4 h-4" />
-                </a>
-                <Button variant="outline" size="icon" onClick={() => copyToClipboard(`/student/view/${sessionId}`)} title="Copy link">
-                  <Share2 className="w-4 h-4" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        {/* End Session Button */}
+        {session?.status === 'active' && (
+          <Button 
+            variant="destructive" 
+            className="w-full h-12"
+            onClick={endSession}
+          >
+            End Session & Save
+          </Button>
+        )}
 
         {/* Present Students List */}
-        <Card className="border-border bg-card/50">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-6 h-6 text-green-500" />
-              <CardTitle className="text-xl">
-                Present Students ({presentStudents.length})
-              </CardTitle>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2">
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="h-8 text-xs gap-2 hover:bg-primary/5"
-                  onClick={() => handleExport('csv')}
-                  disabled={exporting !== null}
-                >
-                  {exporting === 'csv' ? <Loader2 className="h-3 w-3 animate-spin" /> : <TableIcon className="h-3 w-3 text-primary" />}
-                  CSV
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="h-8 text-xs gap-2 hover:bg-primary/5"
-                  onClick={() => handleExport('pdf')}
-                  disabled={exporting !== null}
-                >
-                  {exporting === 'pdf' ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3 text-primary" />}
-                  PDF
-                </Button>
-              </div>
-              <Button 
-                variant="outline" 
-                size="icon" 
-                className="h-8 w-8" 
-                onClick={fetchPresentStudents}
-                title="Refresh list"
-              >
-                <RefreshCcw className="h-4 w-4" />
-              </Button>
-            </div>
+        <Card className="bg-card/50">
+          <CardHeader className="p-4 pb-2 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-green-500" />
+              Present ({presentStudents.length})
+            </CardTitle>
+            <Button 
+              variant="ghost" 
+              size="icon"
+              className="h-8 w-8"
+              onClick={fetchPresentStudents}
+            >
+              <RefreshCcw className="h-4 w-4" />
+            </Button>
           </CardHeader>
-          <CardContent className="p-0 sm:p-6">
-            <div className="overflow-x-auto">
-              <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[100px]">Roll No.</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead className="text-right">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {presentStudents.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center py-10 text-muted-foreground">
-                      No students marked present yet.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  presentStudents.sort((a,b) => a.roll_no.localeCompare(b.roll_no)).map((student) => (
-                    <TableRow key={student.id}>
-                      <TableCell className="font-medium">{student.roll_no}</TableCell>
-                      <TableCell>{student.name}</TableCell>
-                      <TableCell className="text-right">
-                        <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Present</Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
+          <CardContent className="p-0">
+            {presentStudents.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                No students marked yet
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {presentStudents
+                  .sort((a, b) => a.roll_no.localeCompare(b.roll_no))
+                  .map((student, index) => (
+                    <div key={student.id} className="flex items-center justify-between p-4">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-muted-foreground w-6">{index + 1}</span>
+                        <div>
+                          <div className="font-medium text-sm">{student.name}</div>
+                          <div className="text-xs text-muted-foreground">Roll: {student.roll_no}</div>
+                        </div>
+                      </div>
+                      <Badge className="bg-green-500/10 text-green-500">Present</Badge>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </CardContent>
         </Card>
-
-        {/* Action Footer */}
-        {session.status !== 'completed' && (
-          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-            <Button variant="outline" className="flex-1 h-12" onClick={() => toast.info("Manual verification mode enabled")}>
-              Manual Verification
-            </Button>
-            <Button variant="destructive" className="flex-1 h-12" onClick={endSession}>
-              End & Save Session
-            </Button>
-          </div>
-        )}
       </main>
+
+      <MobileBottomNav />
     </div>
   );
 };

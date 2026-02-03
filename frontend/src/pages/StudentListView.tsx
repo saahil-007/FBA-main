@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Loader2, CheckCircle2, Users, FileText, Table as TableIcon } from "lucide-react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 import { API_URL } from "@/config";
 
@@ -143,7 +142,7 @@ const StudentListView = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );
@@ -151,106 +150,140 @@ const StudentListView = () => {
 
   if (!session) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6 text-center">
+      <div className="min-h-screen flex items-center justify-center p-6 text-center bg-background">
         <h1 className="text-xl font-bold">Session not found or expired.</h1>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-2xl mx-auto space-y-8">
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold font-poppins">{session.subject}</h1>
-          <p className="text-muted-foreground">{session.branch} • {session.year} • Div {session.division}</p>
-          <div className="flex flex-col items-center gap-4 mt-2">
-            <Badge variant="outline" className={`${session.status === 'completed' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' : 'bg-green-500/10 text-green-500 border-green-500/20'}`}>
-              {session.status === 'completed' ? 'SESSION COMPLETED' : 'LIVE ATTENDANCE'}
-            </Badge>
+  const absentStudents = allStudents.filter(
+    s => !presentStudents.some(p => p.id === s.id)
+  );
 
-            <div className="flex flex-col items-center gap-2">
-              <div className="flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className={`gap-2 h-9 border-primary/20 ${session.status !== 'completed' ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:bg-primary/5'}`}
-                  onClick={() => handleExport('csv')}
-                  disabled={exporting !== null}
-                >
-                  {exporting === 'csv' ? <Loader2 className="h-4 w-4 animate-spin" /> : <TableIcon className="h-4 w-4 text-primary" />}
-                  Export CSV
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className={`gap-2 h-9 border-primary/20 ${session.status !== 'completed' ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:bg-primary/5'}`}
-                  onClick={() => handleExport('pdf')}
-                  disabled={exporting !== null}
-                >
-                  {exporting === 'pdf' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4 text-primary" />}
-                  Export PDF
-                </Button>
-              </div>
-              {session.status !== 'completed' && (
-                <p className="text-[10px] text-muted-foreground italic">
-                  * Export will be enabled after teacher ends the session
-                </p>
-              )}
-            </div>
+  return (
+    <div className="min-h-screen bg-background pb-4">
+      {/* Mobile Header */}
+      <header className="sticky top-0 z-50 bg-background/95 backdrop-blur-xl border-b border-border safe-top">
+        <div className="flex items-center justify-between h-14 px-4">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base font-bold truncate">{session.subject}</h1>
+            <p className="text-xs text-muted-foreground truncate">
+              {session.branch} • {session.year} • Div {session.division}
+            </p>
           </div>
+          <Badge className={session.status === 'active' ? 'bg-green-500/10 text-green-500' : 'bg-blue-500/10 text-blue-500'}>
+            {session.status === 'active' ? 'Live' : 'Completed'}
+          </Badge>
+        </div>
+      </header>
+
+      <main className="px-4 py-4 max-w-lg mx-auto space-y-4">
+        {/* Session Info */}
+        <div className="text-center space-y-2">
+          <h2 className="text-2xl font-bold font-poppins">{session.subject}</h2>
+          <p className="text-sm text-muted-foreground">
+            {new Date(session.created_at).toLocaleDateString()}
+          </p>
         </div>
 
-        <Card className="border-border bg-card/50 backdrop-blur-xl">
-          <CardHeader className="border-b border-border/50">
-            <CardTitle className="text-xl flex items-center justify-between">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-3 gap-2">
+          <Card className="bg-green-500/10 border-green-500/20">
+            <CardContent className="p-3 text-center">
+              <div className="text-2xl font-bold text-green-500">{presentStudents.length}</div>
+              <div className="text-[10px] text-green-500/80">Present</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-orange-500/10 border-orange-500/20">
+            <CardContent className="p-3 text-center">
+              <div className="text-2xl font-bold text-orange-500">{absentStudents.length}</div>
+              <div className="text-[10px] text-orange-500/80">Absent</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-card/50">
+            <CardContent className="p-3 text-center">
+              <div className="text-2xl font-bold">{allStudents.length}</div>
+              <div className="text-[10px] text-muted-foreground">Total</div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Export Buttons */}
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className={`flex-1 h-10 text-xs gap-2 ${session.status !== 'completed' ? 'opacity-50' : ''}`}
+            onClick={() => handleExport('csv')}
+            disabled={session.status !== 'completed' || exporting !== null}
+          >
+            {exporting === 'csv' ? <Loader2 className="h-4 w-4 animate-spin" /> : <TableIcon className="h-4 w-4" />}
+            CSV
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className={`flex-1 h-10 text-xs gap-2 ${session.status !== 'completed' ? 'opacity-50' : ''}`}
+            onClick={() => handleExport('pdf')}
+            disabled={session.status !== 'completed' || exporting !== null}
+          >
+            {exporting === 'pdf' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            PDF
+          </Button>
+        </div>
+
+        {session.status !== 'completed' && (
+          <p className="text-[10px] text-muted-foreground text-center italic">
+            * Export will be enabled after teacher ends the session
+          </p>
+        )}
+
+        {/* Present Students */}
+        <Card className="bg-card/50">
+          <CardHeader className="p-4 pb-2">
+            <CardTitle className="text-base flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Users className="w-6 h-6 text-primary" />
+                <Users className="h-5 w-5 text-primary" />
                 Present List
               </div>
               <span className="text-sm font-normal text-muted-foreground">
-                Total: {presentStudents.length}
+                {presentStudents.length}/{allStudents.length}
               </span>
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-[100px] pl-6">Roll No.</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead className="text-right pr-6">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {presentStudents.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center py-20 text-muted-foreground">
-                      No students marked yet.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  presentStudents.sort((a,b) => a.roll_no.localeCompare(b.roll_no)).map((student) => (
-                    <TableRow key={student.id} className="border-border/50">
-                      <TableCell className="font-bold text-primary pl-6">{student.roll_no}</TableCell>
-                      <TableCell className="font-medium">{student.name}</TableCell>
-                      <TableCell className="text-right pr-6">
-                        <div className="flex items-center justify-end gap-1 text-green-500">
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span className="text-xs font-bold uppercase tracking-wider">Present</span>
+            {presentStudents.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                No students marked yet
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {presentStudents
+                  .sort((a, b) => a.roll_no.localeCompare(b.roll_no))
+                  .map((student, index) => (
+                    <div key={student.id} className="flex items-center justify-between p-4">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-muted-foreground w-6">{index + 1}</span>
+                        <div>
+                          <div className="font-medium text-sm">{student.name}</div>
+                          <div className="text-xs text-muted-foreground">Roll: {student.roll_no}</div>
                         </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                      </div>
+                      <div className="flex items-center gap-1 text-green-500 text-xs">
+                        <CheckCircle2 className="h-4 w-4" />
+                        <span>Present</span>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
         <p className="text-center text-xs text-muted-foreground">
-          List updates automatically in real-time.
+          List updates automatically in real-time
         </p>
-      </div>
+      </main>
     </div>
   );
 };

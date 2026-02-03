@@ -7,9 +7,17 @@ export default {
   theme: {
   	container: {
   		center: true,
-  		padding: '2rem',
+  		padding: {
+        DEFAULT: '1rem',
+        sm: '1.5rem',
+        lg: '2rem'
+      },
   		screens: {
-  			'2xl': '1400px'
+  			'sm': '640px',
+          'md': '768px',
+          'lg': '1024px',
+          'xl': '1280px',
+          '2xl': '1400px'
   		}
   	},
   	extend: {
@@ -61,7 +69,9 @@ export default {
   		borderRadius: {
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',
-  			sm: 'calc(var(--radius) - 4px)'
+  			sm: 'calc(var(--radius) - 4px)',
+        xl: 'calc(var(--radius) + 4px)',
+        '2xl': 'calc(var(--radius) + 8px)'
   		},
   		keyframes: {
   			'accordion-down': {
@@ -79,11 +89,26 @@ export default {
   				to: {
   					height: '0'
   				}
-  			}
+  			},
+        'fade-in': {
+          from: { opacity: '0' },
+          to: { opacity: '1' }
+        },
+        'slide-up': {
+          from: { transform: 'translateY(10px)', opacity: '0' },
+          to: { transform: 'translateY(0)', opacity: '1' }
+        },
+        'pulse-soft': {
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0.7' }
+        }
   		},
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
-  			'accordion-up': 'accordion-up 0.2s ease-out'
+  			'accordion-up': 'accordion-up 0.2s ease-out',
+        'fade-in': 'fade-in 0.3s ease-out',
+        'slide-up': 'slide-up 0.3s ease-out',
+        'pulse-soft': 'pulse-soft 2s ease-in-out infinite'
   		},
   		boxShadow: {
   			'2xs': 'var(--shadow-2xs)',
@@ -92,7 +117,9 @@ export default {
   			md: 'var(--shadow-md)',
   			lg: 'var(--shadow-lg)',
   			xl: 'var(--shadow-xl)',
-  			'2xl': 'var(--shadow-2xl)'
+  			'2xl': 'var(--shadow-2xl)',
+        'mobile': '0 2px 8px rgba(0, 0, 0, 0.08)',
+        'mobile-lg': '0 4px 16px rgba(0, 0, 0, 0.12)'
   		},
   		fontFamily: {
   			poppins: ['Poppins', 'sans-serif'],
@@ -129,7 +156,15 @@ export default {
   				'Courier New',
   				'monospace'
   			]
-  		}
+  		},
+      spacing: {
+        '18': '4.5rem',
+        '88': '22rem',
+        '128': '32rem'
+      },
+      height: {
+        'screen-safe': 'calc(100vh - env(safe-area-inset-bottom))'
+      }
   	}
   },
   plugins: [require("tailwindcss-animate")],

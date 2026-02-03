@@ -3,8 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, LogOut, User, Camera, History, Users, CheckCircle, Activity } from "lucide-react";
+import { Loader2, LogOut, User, Camera, History, Users, CheckCircle, Activity, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
+import { MobileBottomNav } from "@/components/MobileBottomNav";
 
 const TeacherDashboard = () => {
   const [loading, setLoading] = useState(true);
@@ -44,7 +45,7 @@ const TeacherDashboard = () => {
       ] = await Promise.all([
         supabase.from("sessions").select("*", { count: 'exact', head: true }).eq("teacher_id", user.id),
         supabase.from("attendance_records").select("*, sessions!inner(teacher_id)", { count: 'exact', head: true }).eq("sessions.teacher_id", user.id),
-        supabase.from("sessions").select("*").eq("teacher_id", user.id).order("created_at", { ascending: false }).limit(3)
+        supabase.from("sessions").select("*").eq("teacher_id", user.id).order("created_at", { ascending: false }).limit(5)
       ]);
 
       setStats({
@@ -68,126 +69,153 @@ const TeacherDashboard = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Navbar */}
-      <nav className="border-b border-border bg-card/50 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+    <div className="min-h-screen bg-background pb-20 md:pb-0">
+      {/* Mobile-Optimized Header */}
+      <header className="sticky top-0 z-50 bg-background/95 backdrop-blur-xl border-b border-border safe-top">
+        <div className="flex items-center justify-between h-14 px-4">
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold font-poppins">FBA</h1>
-            <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">Teacher</span>
+            <h1 className="text-lg font-bold font-poppins">FBA</h1>
+            <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
+              Teacher
+            </span>
           </div>
-          <div className="flex items-center gap-2 sm:gap-4">
-            <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground">
-              <User className="w-4 h-4" />
-              <span>{user?.email}</span>
-            </div>
-            <Button variant="ghost" size="sm" onClick={handleLogout} className="px-2 sm:px-3">
-              <LogOut className="w-4 h-4 sm:mr-2" />
-              <span className="hidden sm:inline">Sign Out</span>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={handleLogout}
+              className="h-9 w-9"
+            >
+              <LogOut className="w-4 h-4" />
             </Button>
           </div>
         </div>
-      </nav>
+      </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
+      <main className="px-4 py-4 space-y-4 max-w-lg mx-auto">
         {/* Welcome Section */}
-        <div className="space-y-2">
-          <h2 className="text-3xl font-bold tracking-tight">Teacher Dashboard</h2>
-          <p className="text-muted-foreground">Welcome back! Manage your attendance sessions and view insights.</p>
+        <div className="space-y-1">
+          <h2 className="text-xl font-bold tracking-tight">Dashboard</h2>
+          <p className="text-sm text-muted-foreground">
+            {user?.email?.split('@')[0] || 'Welcome back'}
+          </p>
         </div>
 
-        {/* Action Buttons */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Quick Actions - Large Touch-Friendly Buttons */}
+        <div className="grid grid-cols-2 gap-3">
           <Button 
-            className="h-32 text-xl gap-4 bg-primary hover:bg-primary/90 shadow-lg"
+            className="h-24 flex-col gap-2 bg-primary hover:bg-primary/90 shadow-lg rounded-xl"
             onClick={() => navigate("/teacher/new-attendance")}
           >
-            <Camera className="w-8 h-8" />
-            <div className="text-left">
-              <div className="font-bold">Take Attendance</div>
-              <div className="text-sm font-normal opacity-80">Start a new facial recognition session</div>
+            <Camera className="w-7 h-7" />
+            <div className="text-center">
+              <div className="font-semibold text-sm">Take Attendance</div>
+              <div className="text-xs opacity-80">New Session</div>
             </div>
           </Button>
 
           <Button 
             variant="outline"
-            className="h-32 text-xl gap-4 border-2 hover:bg-accent shadow-sm"
+            className="h-24 flex-col gap-2 border-2 hover:bg-accent rounded-xl"
             onClick={() => navigate("/teacher/past-sessions")}
           >
-            <History className="w-8 h-8 text-primary" />
-            <div className="text-left">
-              <div className="font-bold">View Past Records</div>
-              <div className="text-sm font-normal text-muted-foreground">Review and export previous attendance</div>
+            <History className="w-7 h-7 text-primary" />
+            <div className="text-center">
+              <div className="font-semibold text-sm">Past Sessions</div>
+              <div className="text-xs text-muted-foreground">View History</div>
             </div>
           </Button>
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Total Sessions</CardTitle>
-              <Activity className="h-4 w-4 text-primary" />
+        {/* Stats Cards - Horizontal Scroll on Mobile */}
+        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4">
+          <Card className="min-w-[120px] flex-1 bg-card/50">
+            <CardHeader className="p-3 pb-1">
+              <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                <Activity className="h-3 w-3 text-primary" />
+                Sessions
+              </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-3 pt-0">
               <div className="text-2xl font-bold">{stats.totalSessions}</div>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Total Students Marked</CardTitle>
-              <Users className="h-4 w-4 text-green-500" />
+          <Card className="min-w-[120px] flex-1 bg-card/50">
+            <CardHeader className="p-3 pb-1">
+              <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                <Users className="h-3 w-3 text-green-500" />
+                Students
+              </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-3 pt-0">
               <div className="text-2xl font-bold">{stats.totalAttendance}</div>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Active Sessions</CardTitle>
-              <CheckCircle className="h-4 w-4 text-yellow-500" />
+          <Card className="min-w-[120px] flex-1 bg-card/50">
+            <CardHeader className="p-3 pb-1">
+              <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                <CheckCircle className="h-3 w-3 text-yellow-500" />
+                Active
+              </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-3 pt-0">
               <div className="text-2xl font-bold">{stats.activeSessions}</div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Recent Activity */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Sessions</CardTitle>
-            <CardDescription>Your last 3 attendance sessions</CardDescription>
+        {/* Recent Sessions */}
+        <Card className="bg-card/50">
+          <CardHeader className="p-4 pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Recent Sessions</CardTitle>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-8 text-xs"
+                onClick={() => navigate("/teacher/past-sessions")}
+              >
+                View All
+              </Button>
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             {recentSessions.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">No sessions found</div>
+              <div className="text-center py-6 text-sm text-muted-foreground">
+                No sessions yet
+              </div>
             ) : (
-              <div className="space-y-4">
-                {recentSessions.map((session) => (
+              <div className="divide-y divide-border">
+                {recentSessions.slice(0, 5).map((session) => (
                   <div 
                     key={session.id} 
-                    className="flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-accent/50 cursor-pointer transition-colors"
+                    className="flex items-center justify-between p-4 hover:bg-accent/30 cursor-pointer transition-colors active:bg-accent/50"
                     onClick={() => navigate(`/session/${session.id}`)}
                   >
-                    <div className="space-y-1">
-                      <div className="font-medium">{session.subject || "General Session"}</div>
-                      <div className="text-sm text-muted-foreground">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-sm truncate">
+                        {session.subject || "General Session"}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
                         {session.branch} • {session.year} • Div {session.division}
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-sm font-medium">{new Date(session.created_at).toLocaleDateString()}</div>
-                      <div className={`text-xs ${session.status === 'active' ? 'text-green-500' : 'text-muted-foreground'}`}>
-                        {session.status.charAt(0).toUpperCase() + session.status.slice(1)}
-                      </div>
+                    <div className="flex items-center gap-2 ml-2">
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        session.status === 'active' 
+                          ? 'bg-green-500/10 text-green-500' 
+                          : 'bg-muted text-muted-foreground'
+                      }`}>
+                        {session.status === 'active' ? 'Active' : 'Completed'}
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
                     </div>
                   </div>
                 ))}
@@ -196,6 +224,8 @@ const TeacherDashboard = () => {
           </CardContent>
         </Card>
       </main>
+
+      <MobileBottomNav />
     </div>
   );
 };
