@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 gunicorn
+# Force redeploy trigger
 supabase
 python-dotenv
 huggingface_hub
