@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Loader2, Camera, Users, CheckCircle2, Link as LinkIcon, Share2, ArrowLeft, UserCheck, FileText, Table as TableIcon, RefreshCcw, Search } from "lucide-react";
+import { Loader2, Camera, Users, CheckCircle2, Link as LinkIcon, Share2, ArrowLeft, UserCheck, FileText, Table as TableIcon, RefreshCcw } from "lucide-react";
 import { 
   Select,
   SelectContent,
@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
+
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 import { API_URL } from "@/config";
@@ -27,7 +27,6 @@ const AttendanceSession = () => {
   const [presentStudents, setPresentStudents] = useState<any[]>([]);
 
   const [manualStudentId, setManualStudentId] = useState("");
-  const [studentSearch, setStudentSearch] = useState("");
   const [allStudents, setAllStudents] = useState<any[]>([]);
 
   useEffect(() => {
@@ -279,50 +278,30 @@ const AttendanceSession = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4 sm:p-6 pt-0 sm:pt-0 space-y-4">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by name or roll no..."
-                  className="pl-9"
-                  value={studentSearch}
-                  onChange={(e) => setStudentSearch(e.target.value)}
-                />
-              </div>
-              <div className="flex-[1.5] flex gap-2">
-                <Select value={manualStudentId} onValueChange={setManualStudentId}>
-                  <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="Select Student" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {allStudents
-                      .filter(s => !presentStudents.some(ps => ps.id === s.id))
-                      .filter(s => 
-                        s.name.toLowerCase().includes(studentSearch.toLowerCase()) || 
-                        s.roll_no.toLowerCase().includes(studentSearch.toLowerCase())
-                      )
-                      .sort((a,b) => a.roll_no.localeCompare(b.roll_no))
-                      .map(s => (
-                        <SelectItem key={s.id} value={s.id}>
-                          [{s.roll_no}] {s.name}
-                        </SelectItem>
-                      ))}
-                    {allStudents
-                      .filter(s => !presentStudents.some(ps => ps.id === s.id))
-                      .filter(s => 
-                        s.name.toLowerCase().includes(studentSearch.toLowerCase()) || 
-                        s.roll_no.toLowerCase().includes(studentSearch.toLowerCase())
-                      ).length === 0 && (
-                        <div className="p-2 text-sm text-center text-muted-foreground">
-                          No students found
-                        </div>
-                      )}
-                  </SelectContent>
-                </Select>
-                <Button onClick={handleManualMark} disabled={!manualStudentId} className="shrink-0">
-                  Mark Present
-                </Button>
-              </div>
+            <div className="flex gap-2">
+              <Select value={manualStudentId} onValueChange={setManualStudentId}>
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="Select Student" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allStudents
+                    .filter(s => !presentStudents.some(ps => ps.id === s.id))
+                    .sort((a,b) => a.roll_no.localeCompare(b.roll_no))
+                    .map(s => (
+                      <SelectItem key={s.id} value={s.id}>
+                        [{s.roll_no}] {s.name}
+                      </SelectItem>
+                    ))}
+                  {allStudents.filter(s => !presentStudents.some(ps => ps.id === s.id)).length === 0 && (
+                    <div className="p-2 text-sm text-center text-muted-foreground">
+                      No students found
+                    </div>
+                  )}
+                </SelectContent>
+              </Select>
+              <Button onClick={handleManualMark} disabled={!manualStudentId} className="shrink-0">
+                Mark Present
+              </Button>
             </div>
           </CardContent>
         </Card>
