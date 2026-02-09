@@ -120,7 +120,7 @@ app = FastAPI(title="FBA Backend", lifespan=lifespan)
 # ALLOWED_ORIGINS must be set in the environment variables (comma-separated list)
 # Example: ALLOWED_ORIGINS=http://localhost:5173,https://your-domain.com
 raw_origins = os.environ.get("ALLOWED_ORIGINS", "*")
-allowed_origins = [o.strip() for o in raw_origins.split(",")]
+allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
@@ -128,6 +128,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Supabase setup
