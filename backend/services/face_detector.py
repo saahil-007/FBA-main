@@ -36,14 +36,15 @@ class FaceDetector:
             anchor_centers.append(np.repeat(anchor_grid * stride, 2, axis=0).astype(np.float32))
         return anchor_centers
 
-    def detect(self, img, threshold=0.4, max_num=25):
+    def detect(self, img, threshold=0.5, max_num=25):
         if img is None:
             return [], []
             
         h, w = img.shape[:2]
         
-        # 1. Multi-scale Preprocessing (Resize while keeping aspect ratio)
-        input_size = self.target_size[0]
+        # 1. Faster Preprocessing: Use 320x320 for instant detection on mobile/web
+        # This significantly reduces inference time while remaining accurate for close-up faces
+        input_size = 320 
         im_ratio = float(h) / w
         if im_ratio > 1:
             new_h = input_size
@@ -53,17 +54,26 @@ class FaceDetector:
             new_h = int(new_w * im_ratio)
         
         det_scale = float(new_h) / h
-        resized_img = cv2.resize(img, (new_w, new_h))
+        resized_img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
         
-        # Padding to 640x640
+        # Padding to 320x320
         det_img = np.zeros((input_size, input_size, 3), dtype=np.uint8)
         det_img[:new_h, :new_w, :] = resized_img
         
-        # Normalize: (x - 127.5) / 128.0
+        # Faster blob creation (avoiding full dnn.blobFromImage if possible, but keeping it for consistency)
         blob = cv2.dnn.blobFromImage(det_img, 1.0/128.0, (input_size, input_size), (127.5, 127.5, 127.5), swapRB=True)
         
-        # 2. Inference
-        outputs = self.session.run(None, {self.input_name: blob})
+        # 2. Inference (Optimized target_size used in session run indirectly via blob size)
+        # Note: We need to adjust self.target_size so anchor generation matches the 320 input
+        original_target_size = self.target_size
+        self.target_size = (input_size, input_size)
+        self.anchor_centers = self._generate_anchor_centers() # Re-generate for 320
+        
+        try:
+            outputs = self.session.run(None, {self.input_name: blob})
+        finally:
+            # Restore for next call if needed (though we want 320 consistently now)
+            pass 
         
         scores_list = outputs[:3]  # First 3 are scores
         bboxes_list = outputs[3:6] # Next 3 are bboxes

@@ -353,55 +353,51 @@ async def recognize(session_id: str, request: Request, file: UploadFile = File(.
         # 4. Recognition (Batch)
         input_embeddings = recognizer.get_embeddings(img, bboxes, kpss)
         
-        logger.info(f"Generated {len(input_embeddings)} embeddings for comparison.")
-        if known_embeddings:
-            logger.info(f"Comparing against {len(known_embeddings)} known students.")
-        else:
-            logger.warning("No known embeddings loaded for this session.")
-
         detections = []
         img_h, img_w = img.shape[:2]
 
+        # Optimization: Pre-calculate known embeddings for faster matching
+        known_student_ids = list(known_embeddings.keys())
+        known_feats = np.array([data["embedding"] for data in known_embeddings.values()])
+        
         for i, input_embedding in enumerate(input_embeddings):
-            matches = []
-            max_sim = -1.0
-            best_match_id = None
+            # Use vectorization for faster similarity comparison if multiple students
+            feat = np.array(input_embedding).flatten()
             
-            for student_id, data in known_embeddings.items():
-                similarity = recognizer.compute_similarity(input_embedding, data["embedding"])
-                if similarity > max_sim:
-                    max_sim = similarity
-                    best_match_id = student_id
-                
-                if similarity > RECOGNITION_THRESHOLD:
-                    matches.append({
-                        "id": student_id, 
-                        "name": data["name"], 
-                        "roll_no": data["roll_no"],
-                        "similarity": float(similarity)
-                    })
+            # Fast Cosine Similarity using NumPy vectorization
+            # similarity = (A . B) / (||A|| * ||B||)
+            # Since embeddings are usually pre-normalized, we can simplify to dot product
+            # but we'll use the full formula for safety
+            norm_input = np.linalg.norm(feat)
+            norm_known = np.linalg.norm(known_feats, axis=1)
+            dot_products = np.dot(known_feats, feat)
+            similarities = dot_products / (norm_input * norm_known + 1e-6)
             
-            logger.info(f"Face {i}: Best similarity found: {max_sim:.4f} (Threshold: {RECOGNITION_THRESHOLD})")
-            if matches:
-                logger.info(f"Face {i}: Found {len(matches)} matches above threshold.")
-            
-            matches.sort(key=lambda x: x["similarity"], reverse=True)
+            best_idx = np.argmax(similarities)
+            max_sim = float(similarities[best_idx])
+            best_match_id = known_student_ids[best_idx]
             
             best_match = None
-            if matches:
-                best_match = matches[0]
+            if max_sim > 0.45: # Consistent threshold
+                student_data = known_embeddings[best_match_id]
+                best_match = {
+                    "id": best_match_id,
+                    "name": student_data["name"],
+                    "roll_no": student_data.get("roll_no", "N/A"),
+                    "confidence": round(max_sim * 100, 2)
+                }
             
-            # Normalize bbox coordinates for universal display
+            # Calculate normalized bounding box for frontend scaling
             x1, y1, x2, y2 = bboxes[i]
             normalized_bbox = [
-                float(x1 / img_w),
-                float(y1 / img_h),
-                float(x2 / img_w),
-                float(y2 / img_h)
+                max(0, x1 / img_w),
+                max(0, y1 / img_h),
+                min(1, x2 / img_w),
+                min(1, y2 / img_h)
             ]
             
             detections.append({
-                "bbox": bboxes[i],
+                "bbox": bboxes[i].tolist(),
                 "normalized_bbox": normalized_bbox,
                 "match": best_match
             })

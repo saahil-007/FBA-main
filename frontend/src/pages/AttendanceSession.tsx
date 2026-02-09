@@ -75,28 +75,25 @@ const AttendanceSession = () => {
   const fetchAllStudents = async () => {
     if (!session) return;
     
-    console.log("Fetching all students for session:", {
-      branch: session.branch,
-      year: session.year,
-      division: session.division
-    });
-
     const cacheKey = `descriptors_${session.branch}_${session.year}_${session.division}`;
     const cachedData = localStorage.getItem(cacheKey);
     
-    let students = [];
     if (cachedData) {
       try {
-        students = JSON.parse(cachedData);
+        const students = JSON.parse(cachedData);
         if (Array.isArray(students) && students.length > 0) {
           setAllStudents(students);
+          console.log(`Loaded ${students.length} students from browser cache`);
+          // Even if cached, we might want to refresh in background, 
+          // but for "instant" loading, we stop here if cache is hit.
+          return; 
         }
       } catch (e) {
         console.error("Cache parse error:", e);
       }
     }
 
-    // Try case-insensitive match for better compatibility
+    // Fallback to fetching from DB if not in cache or cache failed
     const { data, error } = await supabase
       .from("students")
       .select("id, name, roll_no")
@@ -110,13 +107,9 @@ const AttendanceSession = () => {
       return;
     }
 
-    console.log(`Fetched ${data?.length || 0} students from database`);
-
     if (data && data.length > 0) {
       setAllStudents(data);
       localStorage.setItem(cacheKey, JSON.stringify(data));
-    } else {
-      console.warn("No students found for this session criteria");
     }
   };
 
