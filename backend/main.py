@@ -356,18 +356,38 @@ async def recognize(session_id: str, request: Request, file: UploadFile = File(.
         detections = []
         img_h, img_w = img.shape[:2]
 
+        # Handle case where no students are found for this session
+        if not known_embeddings:
+            logger.warning(f"No known embeddings for session {session_id}. All detections will be unknown.")
+            for i, bbox in enumerate(bboxes):
+                x1, y1, x2, y2 = bbox
+                normalized_bbox = [max(0, x1/img_w), max(0, y1/img_h), min(1, x2/img_w), min(1, y2/img_h)]
+                detections.append({
+                    "bbox": bbox.tolist(),
+                    "normalized_bbox": normalized_bbox,
+                    "match": None
+                })
+            return {
+                "status": "success", 
+                "detections": detections,
+                "total_students": 0,
+                "image_size": {"width": img_w, "height": img_h},
+                "message": "No students registered for this class."
+            }
+
         # Optimization: Pre-calculate known embeddings for faster matching
         known_student_ids = list(known_embeddings.keys())
-        known_feats = np.array([data["embedding"] for data in known_embeddings.values()])
+        try:
+            known_feats = np.array([data["embedding"] for data in known_embeddings.values()], dtype=np.float32)
+        except Exception as e:
+            logger.error(f"Failed to create numpy array from known embeddings: {e}")
+            raise HTTPException(status_code=500, detail="Corrupted face descriptors in database")
         
         for i, input_embedding in enumerate(input_embeddings):
             # Use vectorization for faster similarity comparison if multiple students
-            feat = np.array(input_embedding).flatten()
+            feat = np.array(input_embedding, dtype=np.float32).flatten()
             
             # Fast Cosine Similarity using NumPy vectorization
-            # similarity = (A . B) / (||A|| * ||B||)
-            # Since embeddings are usually pre-normalized, we can simplify to dot product
-            # but we'll use the full formula for safety
             norm_input = np.linalg.norm(feat)
             norm_known = np.linalg.norm(known_feats, axis=1)
             dot_products = np.dot(known_feats, feat)
@@ -378,7 +398,7 @@ async def recognize(session_id: str, request: Request, file: UploadFile = File(.
             best_match_id = known_student_ids[best_idx]
             
             best_match = None
-            if max_sim > 0.45: # Consistent threshold
+            if max_sim > RECOGNITION_THRESHOLD: # Use configurable threshold
                 student_data = known_embeddings[best_match_id]
                 best_match = {
                     "id": best_match_id,
