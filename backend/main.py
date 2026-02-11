@@ -343,18 +343,37 @@ async def recognize(session_id: str, request: Request, file: UploadFile = File(.
             raise HTTPException(status_code=400, detail="Invalid image data")
         
         # 3. Detection (All faces - up to 25)
-        bboxes, kpss = detector.detect(img, max_num=25)
+        try:
+            bboxes, kpss = detector.detect(img, max_num=25)
+            logger.info(f"Detections in session {session_id}: {len(bboxes)} faces found.")
+        except Exception as e:
+            logger.error(f"Face detection failed for session {session_id}: {e}")
+            raise HTTPException(status_code=500, detail="Face detection failed")
         
-        logger.info(f"Detections in session {session_id}: {len(bboxes)} faces found.")
+        # Get image dimensions for normalization
+        img_h, img_w = img.shape[:2]
         
-        if not bboxes:
-            return {"status": "success", "detections": [], "message": "No faces detected"}
+        if not bboxes or len(bboxes) == 0:
+            logger.info(f"No faces detected in session {session_id}")
+            return {
+                "status": "success", 
+                "detections": [], 
+                "total_students": len(known_embeddings) if known_embeddings else 0,
+                "image_size": {"width": img_w, "height": img_h},
+                "message": "No faces detected in image"
+            }
 
         # 4. Recognition (Batch)
-        input_embeddings = recognizer.get_embeddings(img, bboxes, kpss)
+        try:
+            input_embeddings = recognizer.get_embeddings(img, bboxes, kpss)
+            if not input_embeddings or len(input_embeddings) != len(bboxes):
+                logger.error(f"Embedding extraction mismatch: {len(bboxes)} faces, {len(input_embeddings) if input_embeddings else 0} embeddings")
+                raise HTTPException(status_code=500, detail="Face embedding extraction failed")
+        except Exception as e:
+            logger.error(f"Embedding extraction failed for session {session_id}: {e}")
+            raise HTTPException(status_code=500, detail="Face embedding extraction failed")
         
         detections = []
-        img_h, img_w = img.shape[:2]
 
         # Handle case where no students are found for this session
         if not known_embeddings:
@@ -379,6 +398,18 @@ async def recognize(session_id: str, request: Request, file: UploadFile = File(.
         known_student_ids = list(known_embeddings.keys())
         try:
             known_feats = np.array([data["embedding"] for data in known_embeddings.values()], dtype=np.float32)
+            
+            # Validate that embeddings are not empty or invalid
+            if known_feats.size == 0:
+                logger.warning(f"No valid embeddings found for session {session_id}")
+                return {
+                    "status": "success", 
+                    "detections": [],
+                    "total_students": 0,
+                    "image_size": {"width": img_w, "height": img_h},
+                    "message": "No valid student embeddings available."
+                }
+                
         except Exception as e:
             logger.error(f"Failed to create numpy array from known embeddings: {e}")
             raise HTTPException(status_code=500, detail="Corrupted face descriptors in database")
@@ -389,9 +420,16 @@ async def recognize(session_id: str, request: Request, file: UploadFile = File(.
             
             # Fast Cosine Similarity using NumPy vectorization
             norm_input = np.linalg.norm(feat)
-            norm_known = np.linalg.norm(known_feats, axis=1)
-            dot_products = np.dot(known_feats, feat)
-            similarities = dot_products / (norm_input * norm_known + 1e-6)
+            
+            # Handle invalid embeddings (zero norm)
+            if norm_input == 0:
+                logger.warning(f"Invalid embedding detected for face {i}: zero norm")
+                # Use a default low similarity for invalid embeddings
+                similarities = np.zeros(len(known_student_ids))
+            else:
+                norm_known = np.linalg.norm(known_feats, axis=1)
+                dot_products = np.dot(known_feats, feat)
+                similarities = dot_products / (norm_input * norm_known + 1e-6)
             
             best_idx = np.argmax(similarities)
             max_sim = float(similarities[best_idx])
