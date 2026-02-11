@@ -27,6 +27,11 @@ class FaceRecognizer:
         self.input_size = (112, 112)
         logger.info(f"Recognizer initialized. Input name: {self.input_name}, Input shape: {self.input_shape}")
         logger.info(f"Providers: {providers}")
+        
+        # Log model details for debugging
+        outputs = self.session.get_outputs()
+        if outputs:
+            logger.info(f"Model output name: {outputs[0].name}, output shape: {outputs[0].shape}")
 
     def align_face(self, img, kps):
         # Standard template for 112x112 alignment (InsightFace style)
@@ -90,59 +95,56 @@ class FaceRecognizer:
         if not face_imgs:
             return []
             
-        # Prepare all images for TTA (Original + Flipped)
-        all_images = []
-        for face_img in face_imgs:
-            all_images.append(face_img)
-            all_images.append(cv2.flip(face_img, 1))
-
-        # Run inference for all faces
+        # Process each face with TTA (Test Time Augmentation)
         embeddings = []
+        logger.info("Running sequential inference for faces (TTA enabled)")
         
-        # Check if model supports batching (first dimension is dynamic or > 1)
-        # Force supports_batching to False if model specifically expects batch size 1
-        batch_dim = self.input_shape[0]
-        supports_batching = (not isinstance(batch_dim, int)) or (batch_dim > 1) or (batch_dim == -1)
-        
-        # Override: If we saw warnings about shape mismatch, it's safer to run sequential
-        # Most InsightFace models work best with batch size 1 in ONNX
-        if batch_dim == 1 or batch_dim == '1':
-            supports_batching = False
-            
-        if supports_batching:
+        for i, face_img in enumerate(face_imgs):
             try:
-                # Batch inference
-                blob = cv2.dnn.blobFromImages(all_images, 1.0/127.5, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
-                net_out = self.session.run(None, {self.input_name: blob})[0]
-                logger.debug(f"Batch inference output shape: {net_out.shape}")
+                # Process original image
+                logger.debug(f"Processing original image for face {i}, input shape: {face_img.shape}")
+                blob_orig = cv2.dnn.blobFromImage(face_img, 1.0/127.5, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
+                logger.debug(f"Original blob shape: {blob_orig.shape}")
+                out_orig = self.session.run(None, {self.input_name: blob_orig})[0]
+                logger.debug(f"Original output shape: {out_orig.shape}")
+                
+                # Process flipped image
+                flipped_img = cv2.flip(face_img, 1)
+                blob_flip = cv2.dnn.blobFromImage(flipped_img, 1.0/127.5, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
+                out_flip = self.session.run(None, {self.input_name: blob_flip})[0]
+                logger.debug(f"Flipped output shape: {out_flip.shape}")
+                
+                # Handle different output shapes properly
+                def extract_embedding(out):
+                    if len(out.shape) == 2:
+                        # Expected shape: (1, 512) or similar
+                        return out[0].flatten()
+                    elif len(out.shape) == 1:
+                        # Direct 1D output
+                        return out.flatten()
+                    else:
+                        # Fallback for unexpected shapes
+                        return out.flatten()[:512]  # Take first 512 elements
+                
+                emb_orig = extract_embedding(out_orig)
+                emb_flip = extract_embedding(out_flip)
+                
+                # Combine embeddings using TTA (Test Time Augmentation)
+                embedding = emb_orig + emb_flip
+                
+                # Normalize the combined embedding
+                norm = np.linalg.norm(embedding)
+                if norm > 0:
+                    embedding /= norm
+                
+                embeddings.append(embedding.tolist())
+                logger.debug(f"Processed face {i+1}/{len(face_imgs)}, embedding shape: {embedding.shape}")
+                
             except Exception as e:
-                logger.warning(f"Batch inference failed, falling back to sequential: {e}")
-                supports_batching = False
-
-        if not supports_batching:
-            # Sequential inference
-            logger.info("Running sequential inference for faces (TTA enabled)")
-            net_out_list = []
-            for face_img in all_images:
-                # blobFromImage returns (1, 3, 112, 112)
-                blob = cv2.dnn.blobFromImage(face_img, 1.0/127.5, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
-                out = self.session.run(None, {self.input_name: blob})[0]
-                net_out_list.append(out.flatten())
-            net_out = np.array(net_out_list)
-            logger.debug(f"Sequential inference combined output shape: {net_out.shape}")
-
-        for i in range(len(face_imgs)):
-            # Combine Original (i*2) and Flipped (i*2 + 1)
-            # Use TTA: Average the embeddings of original and flipped images
-            emb_orig = net_out[i*2].flatten()
-            emb_flip = net_out[i*2+1].flatten()
-            
-            embedding = emb_orig + emb_flip
-            norm = np.linalg.norm(embedding)
-            if norm > 0:
-                embedding /= norm
-            embeddings.append(embedding.tolist())
-            
+                logger.error(f"Failed to process face {i}: {e}")
+                # Return a zero embedding for failed faces
+                embeddings.append([0.0] * 512)
+        
         return embeddings
 
     def get_embedding(self, img, bbox, kps=None):

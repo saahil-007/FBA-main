@@ -16,3 +16,4 @@ onnxruntime
 pandas
 openpyxl
 fpdf
+httptools

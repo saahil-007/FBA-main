@@ -31,6 +31,7 @@ const AttendanceSession = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [isMarking, setIsMarking] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [cacheStatus, setCacheStatus] = useState<'loading' | 'cached' | 'fresh' | 'error'>('loading');
 
   useEffect(() => {
     fetchSessionDetails();
@@ -83,17 +84,44 @@ const AttendanceSession = () => {
         const students = JSON.parse(cachedData);
         if (Array.isArray(students) && students.length > 0) {
           setAllStudents(students);
+          setCacheStatus('cached');
           console.log(`Loaded ${students.length} students from browser cache`);
-          // Even if cached, we might want to refresh in background, 
-          // but for "instant" loading, we stop here if cache is hit.
+          // Refresh cache in background for new devices
+          refreshStudentCache();
           return; 
         }
       } catch (e) {
         console.error("Cache parse error:", e);
+        setCacheStatus('error');
       }
     }
 
-    // Fallback to fetching from DB if not in cache or cache failed
+    // Fetch from DB if not in cache or cache failed
+    setCacheStatus('loading');
+    await fetchStudentsFromDB();
+  };
+
+  const refreshStudentCache = async () => {
+    // Background refresh for cache validation
+    try {
+      const { data, error } = await supabase
+        .from("students")
+        .select("id, name, roll_no")
+        .ilike("branch", session.branch)
+        .ilike("year", session.year)
+        .ilike("division", session.division);
+        
+      if (!error && data && data.length > 0) {
+        const cacheKey = `descriptors_${session.branch}_${session.year}_${session.division}`;
+        localStorage.setItem(cacheKey, JSON.stringify(data));
+        console.log(`Background refresh: Updated cache with ${data.length} students`);
+      }
+    } catch (e) {
+      console.error("Background cache refresh failed:", e);
+    }
+  };
+
+  const fetchStudentsFromDB = async () => {
     const { data, error } = await supabase
       .from("students")
       .select("id, name, roll_no")
@@ -104,12 +132,18 @@ const AttendanceSession = () => {
     if (error) {
       console.error("Error fetching students:", error);
       toast.error("Error fetching students list");
+      setCacheStatus('error');
       return;
     }
 
     if (data && data.length > 0) {
       setAllStudents(data);
+      setCacheStatus('fresh');
+      const cacheKey = `descriptors_${session.branch}_${session.year}_${session.division}`;
       localStorage.setItem(cacheKey, JSON.stringify(data));
+      console.log(`Fetched ${data.length} students from database and cached them`);
+    } else {
+      setCacheStatus('error');
     }
   };
 
@@ -339,6 +373,21 @@ const AttendanceSession = () => {
           <Badge className={session?.status === 'active' ? 'bg-green-500/10 text-green-500' : 'bg-blue-500/10 text-blue-500'}>
             {session?.status === 'active' ? 'Active' : 'Completed'}
           </Badge>
+          {cacheStatus === 'cached' && (
+            <Badge variant="outline" className="bg-yellow-500/10 border-yellow-500 text-yellow-500 text-xs">
+              Cached
+            </Badge>
+          )}
+          {cacheStatus === 'fresh' && (
+            <Badge variant="outline" className="bg-green-500/10 border-green-500 text-green-500 text-xs">
+              Fresh
+            </Badge>
+          )}
+          {cacheStatus === 'loading' && (
+            <Badge variant="outline" className="bg-blue-500/10 border-blue-500 text-blue-500 text-xs">
+              Loading...
+            </Badge>
+          )}
         </div>
       </header>
 
@@ -563,7 +612,17 @@ const AttendanceSession = () => {
           <CardContent className="p-0">
             {presentStudents.length === 0 ? (
               <div className="py-8 text-center text-sm text-muted-foreground">
-                No students marked yet
+                {session?.status === 'completed' ? (
+                  <div className="space-y-2">
+                    <div>Session completed - no attendance recorded</div>
+                    <div className="text-xs text-muted-foreground/60">
+                      This session has no attendance records. 
+                      {allStudents.length > 0 && "Students loaded successfully from cache."}
+                    </div>
+                  </div>
+                ) : (
+                  <div>No students marked yet</div>
+                )}
               </div>
             ) : (
               <div className="divide-y divide-border">

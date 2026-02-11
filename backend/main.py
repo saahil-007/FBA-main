@@ -455,7 +455,7 @@ async def recognize(session_id: str, request: Request, file: UploadFile = File(.
             ]
             
             detections.append({
-                "bbox": bboxes[i].tolist(),
+                "bbox": bboxes[i] if isinstance(bboxes[i], list) else bboxes[i].tolist(),
                 "normalized_bbox": normalized_bbox,
                 "match": best_match
             })
