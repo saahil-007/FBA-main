@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Loader2, Camera, Users, CheckCircle2, Link as LinkIcon, Share2, ArrowLeft, UserCheck, FileText, Table as TableIcon, RefreshCcw } from "lucide-react";
+import { Loader2, Camera, Users, CheckCircle2, Link as LinkIcon, Share2, ArrowLeft, UserCheck, FileText, Table as TableIcon, RefreshCcw, Copy, Check, QrCode } from "lucide-react";
 import { 
   Dialog,
   DialogContent,
@@ -32,6 +32,17 @@ const AttendanceSession = () => {
   const [isMarking, setIsMarking] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [cacheStatus, setCacheStatus] = useState<'loading' | 'cached' | 'fresh' | 'error'>('loading');
+  
+  // Determine mode from URL path
+  const pathParts = window.location.pathname.split('/');
+  const version = pathParts[pathParts.length - 2]; // v1 or v2
+  const isV2 = version === 'v2'; // Student self-capture mode
+  const isV1 = version === 'v1'; // Teacher capture mode
+  
+  // v2 specific states
+  const [attendanceCount, setAttendanceCount] = useState(0);
+  const [totalStudents, setTotalStudents] = useState(0);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   useEffect(() => {
     fetchSessionDetails();
@@ -86,8 +97,19 @@ const AttendanceSession = () => {
           setAllStudents(students);
           setCacheStatus('cached');
           console.log(`Loaded ${students.length} students from browser cache`);
-          // Refresh cache in background for new devices
-          refreshStudentCache();
+          
+          // If in teacher mode, check if we have descriptors
+          if (isV1 && !students[0].face_descriptor) {
+            console.log("Cache missing descriptors for teacher mode, refetching...");
+            setCacheStatus('loading');
+            await fetchStudentsFromDB();
+            return;
+          }
+
+          // Only refresh in background if NOT in teacher mode (to save bandwidth/DB calls)
+          // or if user specifically requested strict cache usage, we skip it.
+          // User request: "check if they exist in cache , if not then and only then make db call"
+          // So we skip refreshStudentCache() if we found valid data.
           return; 
         }
       } catch (e) {
@@ -104,9 +126,14 @@ const AttendanceSession = () => {
   const refreshStudentCache = async () => {
     // Background refresh for cache validation
     try {
+      // Only load descriptors if in teacher mode (v1)
+      const selectQuery = isV1 
+        ? "id, name, roll_no, face_descriptor" 
+        : "id, name, roll_no";
+
       const { data, error } = await supabase
         .from("students")
-        .select("id, name, roll_no")
+        .select(selectQuery)
         .ilike("branch", session.branch)
         .ilike("year", session.year)
         .ilike("division", session.division);
@@ -122,9 +149,14 @@ const AttendanceSession = () => {
   };
 
   const fetchStudentsFromDB = async () => {
+    // Only load descriptors if in teacher mode (v1)
+    const selectQuery = isV1 
+      ? "id, name, roll_no, face_descriptor" 
+      : "id, name, roll_no";
+
     const { data, error } = await supabase
       .from("students")
-      .select("id, name, roll_no")
+      .select(selectQuery)
       .ilike("branch", session.branch)
       .ilike("year", session.year)
       .ilike("division", session.division);
@@ -332,6 +364,81 @@ const AttendanceSession = () => {
     }
   };
 
+  // v2 specific functions
+  useEffect(() => {
+    if (isV2 && session) {
+      // Get student count for this class
+      const fetchStudentCount = async () => {
+        const { count } = await supabase
+          .from("students")
+          .select("*", { count: 'exact', head: true })
+          .eq("branch", session.branch)
+          .eq("year", session.year)
+          .eq("division", session.division);
+        
+        if (count !== null) setTotalStudents(count);
+      };
+      
+      fetchStudentCount();
+      
+      // Get initial attendance count
+      const fetchAttendanceCount = async () => {
+        const { count } = await supabase
+          .from("attendance_records")
+          .select("*", { count: 'exact', head: true })
+          .eq("session_id", sessionId);
+        
+        if (count !== null) setAttendanceCount(count);
+      };
+      
+      fetchAttendanceCount();
+      
+      // Subscribe to realtime updates
+      const subscription = supabase
+        .channel(`attendance_${sessionId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'attendance_records',
+            filter: `session_id=eq.${sessionId}`
+          },
+          () => {
+            setAttendanceCount(prev => prev + 1);
+          }
+        )
+        .subscribe();
+      
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
+  }, [isV2, session, sessionId]);
+
+  const getStudentCaptureLink = () => {
+    if (!sessionId) return "";
+    const baseUrl = window.location.origin;
+    return `${baseUrl}/student-capture/${sessionId}`;
+  };
+
+  const copyStudentLinkToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(getStudentCaptureLink());
+      setCopiedLink(true);
+      toast.success("Link copied to clipboard!");
+      setTimeout(() => setCopiedLink(false), 2000);
+    } catch (err) {
+      toast.error("Failed to copy link");
+    }
+  };
+
+  const shareToWhatsApp = () => {
+    const link = getStudentCaptureLink();
+    const text = `📚 Attendance Session Opened!%0A%0ASubject: ${session?.subject || 'N/A'}%0AClass: ${session?.branch} ${session?.year} Div ${session?.division}%0A%0AMark your attendance here:%0A${link}%0A%0A⚠️ You must be within the classroom to mark attendance.`;
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -370,9 +477,21 @@ const AttendanceSession = () => {
               </p>
             </div>
           </div>
-          <Badge className={session?.status === 'active' ? 'bg-green-500/10 text-green-500' : 'bg-blue-500/10 text-blue-500'}>
-            {session?.status === 'active' ? 'Active' : 'Completed'}
-          </Badge>
+          <div className="flex gap-2">
+            {isV2 && (
+              <Badge variant="outline" className="bg-purple-500/10 border-purple-500 text-purple-500 text-xs">
+                v2
+              </Badge>
+            )}
+            {isV1 && (
+              <Badge variant="outline" className="bg-blue-500/10 border-blue-500 text-blue-500 text-xs">
+                v1
+              </Badge>
+            )}
+            <Badge className={session?.status === 'active' ? 'bg-green-500/10 text-green-500' : 'bg-blue-500/10 text-blue-500'}>
+              {session?.status === 'active' ? 'Active' : 'Completed'}
+            </Badge>
+          </div>
           {cacheStatus === 'cached' && (
             <Badge variant="outline" className="bg-yellow-500/10 border-yellow-500 text-yellow-500 text-xs">
               Cached
@@ -392,6 +511,77 @@ const AttendanceSession = () => {
       </header>
 
       <main className="px-4 py-4 max-w-lg mx-auto space-y-4">
+        {/* v2: Student Self-Capture Mode UI */}
+        {isV2 && (
+          <>
+            {/* Live Attendance Progress */}
+            <Card className="bg-primary/5 border-primary/20">
+              <CardContent className="p-6">
+                <div className="text-center space-y-4">
+                  <div className="text-5xl font-bold text-primary">
+                    {attendanceCount}<span className="text-2xl text-muted-foreground">/{totalStudents}</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">Students Present</p>
+                  <div className="h-2 w-full bg-background rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-primary transition-all duration-500"
+                      style={{ width: `${totalStudents > 0 ? (attendanceCount / totalStudents) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Share Link */}
+            <Card>
+              <CardHeader className="p-4 pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <QrCode className="w-4 h-4" />
+                  Share with Students
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 space-y-4">
+                <div className="flex gap-2">
+                  <Input 
+                    value={getStudentCaptureLink()}
+                    readOnly
+                    className="text-xs bg-muted"
+                  />
+                  <Button 
+                    size="icon"
+                    variant="outline"
+                    onClick={copyStudentLinkToClipboard}
+                  >
+                    {copiedLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  </Button>
+                </div>
+                <Button 
+                  onClick={shareToWhatsApp}
+                  className="w-full"
+                  variant="outline"
+                >
+                  Share to WhatsApp
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Instructions */}
+            <div className="text-sm text-muted-foreground space-y-2">
+              <p className="font-medium text-foreground">How it works:</p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>Students open the link on their phones</li>
+                <li>They enter their roll number</li>
+                <li>Location is verified (must be in classroom)</li>
+                <li>Face is matched against enrolled photo</li>
+                <li>Liveness check prevents photo spoofing</li>
+              </ul>
+            </div>
+          </>
+        )}
+
+        {/* v1: Teacher Capture Mode - Session Stats */}
+        {!isV2 && (
+          <>
         {/* Session Stats */}
         <div className="flex gap-3 overflow-x-auto scrollbar-hide -mx-4 px-4">
           <Card className="min-w-[80px] flex-1 bg-primary/10 border-primary/20">
@@ -421,6 +611,10 @@ const AttendanceSession = () => {
             </CardContent>
           </Card>
         </div>
+
+
+          </>
+        )}
 
         {/* Manual Marking */}
         {session?.status === 'active' && (
@@ -517,44 +711,72 @@ const AttendanceSession = () => {
             <div className="grid grid-cols-2 gap-2">
               {session?.status === 'active' ? (
                 <>
-                  <div className="space-y-2">
-                    <Button 
-                      variant="default"
-                      className="w-full h-20 flex-col gap-1"
-                      onClick={() => openInNewTab(`/student/camera/${sessionId}`)}
-                    >
-                      <Camera className="w-6 h-6" />
-                      <span className="text-xs">Open Camera</span>
-                    </Button>
-                    <Button 
-                        variant="secondary"
-                        size="sm"
-                        className="w-full gap-2 h-9"
-                        onClick={() => handleShare(`/student/camera/${sessionId}`, "Attendance Camera")}
-                      >
-                        <Share2 className="w-4 h-4" />
-                        Share Camera
-                      </Button>
-                    </div>
-                    <div className="space-y-2">
-                      <Button 
-                        variant="outline"
-                        className="w-full h-20 flex-col gap-1"
-                        onClick={() => openInNewTab(`/student/view/${sessionId}`)}
-                      >
-                        <Users className="w-6 h-6" />
-                        <span className="text-xs">View List</span>
-                      </Button>
-                      <Button 
-                        variant="secondary"
-                        size="sm"
-                        className="w-full gap-2 h-9"
-                        onClick={() => handleShare(`/student/view/${sessionId}`, "Attendance List")}
-                      >
-                        <Share2 className="w-4 h-4" />
-                        Share List
-                      </Button>
-                  </div>
+                  {isV2 ? (
+                    // v2: Student Self-Capture Mode
+                    <>
+                      <div className="col-span-2 space-y-2">
+                        <Button 
+                          variant="default"
+                          className="w-full h-20 flex-col gap-1"
+                          onClick={() => openInNewTab(`/student-capture/${sessionId}`)}
+                        >
+                          <Camera className="w-6 h-6" />
+                          <span className="text-xs">Student Capture Link</span>
+                        </Button>
+                        <Button 
+                          variant="secondary"
+                          size="sm"
+                          className="w-full gap-2 h-9"
+                          onClick={() => handleShare(`/student-capture/${sessionId}`, "Student Attendance Capture")}
+                        >
+                          <Share2 className="w-4 h-4" />
+                          Share to Students
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    // v1: Teacher Capture Mode
+                    <>
+                      <div className="space-y-2">
+                        <Button 
+                          variant="default"
+                          className="w-full h-20 flex-col gap-1"
+                          onClick={() => openInNewTab(`/student/camera/${sessionId}`)}
+                        >
+                          <Camera className="w-6 h-6" />
+                          <span className="text-xs">Open Camera</span>
+                        </Button>
+                        <Button 
+                            variant="secondary"
+                            size="sm"
+                            className="w-full gap-2 h-9"
+                            onClick={() => handleShare(`/student/camera/${sessionId}`, "Attendance Camera")}
+                          >
+                            <Share2 className="w-4 h-4" />
+                            Share Camera
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          <Button 
+                            variant="outline"
+                            className="w-full h-20 flex-col gap-1"
+                            onClick={() => openInNewTab(`/student/view/${sessionId}`)}
+                          >
+                            <Users className="w-6 h-6" />
+                            <span className="text-xs">View List</span>
+                          </Button>
+                          <Button 
+                            variant="secondary"
+                            size="sm"
+                            className="w-full gap-2 h-9"
+                            onClick={() => handleShare(`/student/view/${sessionId}`, "Attendance List")}
+                          >
+                            <Share2 className="w-4 h-4" />
+                            Share List
+                          </Button>
+                      </div>
+                    </>
+                  )}
                 </>
               ) : (
                 <>

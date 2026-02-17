@@ -44,5 +44,5 @@ USER appuser
 # Expose the port FastAPI will run on
 EXPOSE 8000
 
-# Start the application using uvicorn directly for production
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
+# Start the application using gunicorn for production
+CMD ["sh", "-c", "gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT:-8000} --timeout 120"]

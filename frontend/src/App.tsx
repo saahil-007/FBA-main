@@ -13,6 +13,7 @@ import CameraRecognition from "./pages/CameraRecognition";
 import TeacherPastSessions from "./pages/TeacherPastSessions";
 import SessionDetails from "./pages/SessionDetails";
 import StudentListView from "./pages/StudentListView";
+import StudentCapture from "./pages/StudentCapture";
 import NotFound from "./pages/NotFound";
 import { useEffect, useState } from "react";
 import { supabase } from "./lib/supabase";
@@ -70,9 +71,24 @@ const App = () => (
               <AttendanceSession />
             </ProtectedRoute>
           } />
+          
+          {/* v1: Teacher capture mode (Handle Yourself) */}
+          <Route path="/teacher/new-attendance/v1/:sessionId" element={
+            <ProtectedRoute>
+              <AttendanceSession />
+            </ProtectedRoute>
+          } />
+          
+          {/* v2: Student self-capture mode (Let Students Capture) */}
+          <Route path="/teacher/new-attendance/v2/:sessionId" element={
+            <ProtectedRoute>
+              <AttendanceSession />
+            </ProtectedRoute>
+          } />
 
           <Route path="/student/camera/:sessionId" element={<CameraRecognition />} />
           <Route path="/student/view/:sessionId" element={<StudentListView />} />
+          <Route path="/student-capture/:sessionId" element={<StudentCapture />} />
           
           <Route path="/teacher/past-sessions" element={
             <ProtectedRoute>

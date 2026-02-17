@@ -7,10 +7,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Loader2, Plus, LogOut, User, ArrowLeft, ChevronRight } from "lucide-react";
+import { Loader2, Plus, LogOut, ArrowLeft, Camera, Users } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 import { API_URL } from "@/config";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
+
+const DEFAULT_GEOFENCE_RADIUS = 10;
 
 const NewAttendance = () => {
   const [loading, setLoading] = useState(true);
@@ -34,6 +37,16 @@ const NewAttendance = () => {
     startTime: "",
     duration: "1",
   });
+
+  // Mode selection state
+  const [showModeSelection, setShowModeSelection] = useState(false);
+  const [createdSessionId, setCreatedSessionId] = useState<string | null>(null);
+  const [createdSessionInfo, setCreatedSessionInfo] = useState<any>(null);
+  
+  // Teacher location state
+  const [teacherLocation, setTeacherLocation] = useState<{lat: number, lon: number} | null>(null);
+  const [capturingLocation, setCapturingLocation] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   useEffect(() => {
     checkUser();
@@ -92,6 +105,35 @@ const NewAttendance = () => {
     navigate("/login");
   };
 
+  // Capture teacher's GPS location
+  const captureTeacherLocation = (): Promise<{lat: number, lon: number} | null> => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        setLocationError("Geolocation is not supported by your browser");
+        resolve(null);
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const location = {
+            lat: position.coords.latitude,
+            lon: position.coords.longitude
+          };
+          setTeacherLocation(location);
+          setLocationError(null);
+          resolve(location);
+        },
+        (err) => {
+          console.error("Geolocation error:", err);
+          setLocationError("Unable to get your location. Please enable location permissions.");
+          resolve(null);
+        },
+        { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 }
+      );
+    });
+  };
+
   const handleCreateSession = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.branch || !formData.year || !formData.division || !formData.subject || !formData.classroom || !formData.startTime) {
@@ -100,11 +142,23 @@ const NewAttendance = () => {
     }
 
     setSubmitting(true);
+    setCapturingLocation(true);
+    
     try {
+      // Capture teacher's location (will be used as geofence center)
+      toast.info("Capturing your location...");
+      const location = await captureTeacherLocation();
+      
+      if (!location) {
+        toast.warning("Could not capture location. Students will be able to mark attendance from anywhere.");
+      } else {
+        toast.success(`Location captured: ${location.lat.toFixed(4)}, ${location.lon.toFixed(4)}`);
+      }
+
       // Calculate end time
-      const [hours, minutes] = formData.startTime.split(':').map(Number);
-      const endHours = (hours + parseInt(formData.duration)) % 24;
-      const endTime = `${endHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+      const [hours, minutes] = formData.startTime.split(':');
+      const endHours = (parseInt(hours) + parseInt(formData.duration)) % 24;
+      const endTime = `${endHours.toString().padStart(2, '0')}:${minutes}`;
 
       const selectedSubject = subjects.find(s => s.code === formData.subject);
 
@@ -117,7 +171,11 @@ const NewAttendance = () => {
         class_name: formData.classroom,
         start_time: formData.startTime,
         end_time: endTime,
-        status: 'active'
+        status: 'active',
+        teacher_latitude: location?.lat,
+        teacher_longitude: location?.lon,
+        geofence_radius: DEFAULT_GEOFENCE_RADIUS,
+        use_teacher_location: true
       }).select().single();
 
       if (error) throw error;
@@ -158,11 +216,39 @@ const NewAttendance = () => {
       }
 
       toast.success("Session created successfully");
-      navigate(`/teacher/new-attendance/${data.id}`);
+      setCreatedSessionId(data.id);
+      setCreatedSessionInfo(data);
+      setShowModeSelection(true);
     } catch (error: any) {
       toast.error(error.message || "Failed to create session");
     } finally {
       setSubmitting(false);
+      setCapturingLocation(false);
+    }
+  };
+
+  const handleModeSelection = async (mode: 'teacher' | 'student') => {
+    if (!createdSessionId) return;
+    
+    // Update session with capture mode
+    const { error } = await supabase
+      .from("sessions")
+      .update({ capture_mode: mode })
+      .eq("id", createdSessionId);
+    
+    if (error) {
+      toast.error("Failed to set capture mode");
+      return;
+    }
+    
+    setShowModeSelection(false);
+    
+    if (mode === 'teacher') {
+      // v1: Handle Yourself mode - teacher captures students
+      navigate(`/teacher/new-attendance/v1/${createdSessionId}`);
+    } else {
+      // v2: Let Students Capture mode - students self-capture
+      navigate(`/teacher/new-attendance/v2/${createdSessionId}`);
     }
   };
 
@@ -353,6 +439,49 @@ const NewAttendance = () => {
       </main>
 
       <MobileBottomNav />
+
+      {/* Mode Selection Dialog */}
+      <Dialog open={showModeSelection} onOpenChange={setShowModeSelection}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-center text-xl">Choose Capture Mode</DialogTitle>
+            <DialogDescription className="text-center">
+              How would you like to handle attendance?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <Button
+              onClick={() => handleModeSelection('teacher')}
+              variant="outline"
+              className="h-auto p-6 flex flex-col items-center gap-3 border-2 hover:border-primary hover:bg-primary/5"
+            >
+              <Camera className="w-8 h-8 text-primary" />
+              <div className="text-center">
+                <div className="font-semibold text-base">Handle Yourself</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Use your device to capture all students
+                </div>
+              </div>
+            </Button>
+            
+            <Button
+              onClick={() => handleModeSelection('student')}
+              variant="outline"
+              className="h-auto p-6 flex flex-col items-center gap-3 border-2 hover:border-primary hover:bg-primary/5"
+            >
+              <Users className="w-8 h-8 text-primary" />
+              <div className="text-center">
+                <div className="font-semibold text-base">Let Students Capture</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Students mark their own attendance via link
+                </div>
+              </div>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+
     </div>
   );
 };

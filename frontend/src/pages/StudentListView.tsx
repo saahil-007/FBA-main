@@ -1,16 +1,20 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Loader2, CheckCircle2, Users, FileText, Table as TableIcon, Camera } from "lucide-react";
+import { Loader2, CheckCircle2, Users, FileText, Table as TableIcon, Camera, PartyPopper } from "lucide-react";
 
 import { API_URL } from "@/config";
 
 const StudentListView = () => {
   const { sessionId } = useParams();
+  const [searchParams] = useSearchParams();
+  const justMarked = searchParams.get('marked') === 'true';
+  const studentName = searchParams.get('name');
+  const rollNumber = searchParams.get('roll');
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<string | null>(null);
   const [session, setSession] = useState<any>(null);
@@ -19,7 +23,15 @@ const StudentListView = () => {
 
   useEffect(() => {
     fetchSessionDetails();
-  }, [sessionId]);
+    
+    // Show success toast when coming from successful attendance marking
+    if (justMarked && studentName) {
+      toast.success(`Your attendance has been marked, ${studentName}!`, {
+        duration: 5000,
+        icon: <PartyPopper className="w-4 h-4" />
+      });
+    }
+  }, [sessionId, justMarked, studentName]);
 
   useEffect(() => {
     if (session) {
@@ -83,6 +95,13 @@ const StudentListView = () => {
   };
 
   const fetchSessionDetails = async () => {
+    try {
+      // Ensure backend validates session (auto-closes if expired)
+      await fetch(`${API_URL}/sessions/${sessionId}/check-access`).catch(err => console.warn("Backend check skipped", err));
+    } catch (e) {
+      // Ignore errors, proceed with Supabase fetch
+    }
+
     const { data, error } = await supabase
       .from("sessions")
       .select("*")
@@ -204,6 +223,24 @@ const StudentListView = () => {
       </header>
 
       <main className="px-4 py-4 max-w-lg mx-auto space-y-4">
+        {/* Success Message - Only shown when coming from successful capture */}
+        {justMarked && (
+          <Card className="bg-green-500/10 border-green-500/30 border-2">
+            <CardContent className="p-6 text-center">
+              <PartyPopper className="w-12 h-12 text-green-500 mx-auto mb-3" />
+              <h3 className="text-xl font-bold text-green-600 mb-1">
+                Attendance Marked Successfully!
+              </h3>
+              <p className="text-green-700">
+                Welcome, <span className="font-semibold">{studentName || 'Student'}</span>!
+              </p>
+              <p className="text-sm text-green-600/80 mt-1">
+                Roll Number: {rollNumber || 'N/A'}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Session Info */}
         <div className="text-center space-y-2">
           <h2 className="text-2xl font-bold font-poppins">{session.subject}</h2>
