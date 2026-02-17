@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Loader2, Plus, LogOut, ArrowLeft, Camera, Users } from "lucide-react";
+import { Loader2, Plus, LogOut, ArrowLeft, Camera, Users, MapPin, RefreshCw } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 import { API_URL } from "@/config";
@@ -133,6 +133,11 @@ const NewAttendance = () => {
       );
     });
   };
+
+  // Auto-capture location on mount (after function is defined)
+  useEffect(() => {
+    captureTeacherLocation();
+  }, []);
 
   const handleCreateSession = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -422,14 +427,62 @@ const NewAttendance = () => {
                   </Select>
                 </div>
               </div>
+
+              {/* Location Status */}
+              <div className="pt-2 border-t border-border mt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="text-xs font-semibold flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5" />
+                    Teacher Location
+                  </Label>
+                  {teacherLocation ? (
+                    <span className="text-[10px] text-green-500 font-medium flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                      Captured
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground font-medium">Not Captured</span>
+                  )}
+                </div>
+                
+                {locationError ? (
+                  <div className="bg-red-500/10 border border-red-500/20 rounded-md p-2 text-xs text-red-600 mb-2">
+                    {locationError}
+                  </div>
+                ) : null}
+
+                <div className="flex gap-2">
+                   <div className="flex-1 bg-muted/50 rounded-md p-2 text-xs text-muted-foreground font-mono truncate">
+                      {teacherLocation 
+                        ? `${teacherLocation.lat.toFixed(6)}, ${teacherLocation.lon.toFixed(6)}`
+                        : "Waiting for capture..."}
+                   </div>
+                   <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="icon" 
+                      className="h-8 w-8"
+                      onClick={() => {
+                        toast.info("Refetching location...");
+                        captureTeacherLocation();
+                      }}
+                      disabled={capturingLocation}
+                   >
+                     <RefreshCw className={`w-3.5 h-3.5 ${capturingLocation ? 'animate-spin' : ''}`} />
+                   </Button>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1.5">
+                  * Location is mandatory for student self-capture sessions.
+                </p>
+              </div>
             </CardContent>
             <CardFooter className="p-4 pt-0">
               <Button 
                 type="submit" 
                 className="w-full h-12 text-sm font-semibold"
-                disabled={submitting}
+                disabled={submitting || capturingLocation}
               >
-                {submitting ? (
+                {submitting || capturingLocation ? (
                   <Loader2 className="w-5 h-5 animate-spin mr-2" />
                 ) : (
                   <Plus className="w-5 h-5 mr-2" />
@@ -439,6 +492,7 @@ const NewAttendance = () => {
             </CardFooter>
           </Card>
         </form>
+
       </main>
 
       <MobileBottomNav />
