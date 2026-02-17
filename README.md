@@ -34,6 +34,9 @@
 | 📊 **Real-time Analytics** | Live attendance tracking with exportable reports (CSV/PDF) |
 | 🏫 **Multi-Class Support** | Manage multiple branches, years, divisions, and subjects |
 | 📷 **Batch Recognition** | Detect and recognize up to 25 faces simultaneously |
+| 📍 **Precise Geofencing** | High-precision (6 decimal places) location enforcement for attendance |
+| 🤳 **Student Self-Capture** | Secure mode for students to mark their own attendance within class bounds |
+| 📱 **One Device Policy** | IP-based restrictions to prevent proxy attendance on same device |
 | 🌐 **Cloud-Ready** | Deploy on Railway (backend) and Vercel (frontend) |
 
 ---
@@ -66,14 +69,22 @@
 
 ### Recognition Flow
 
-1. **Session Creation**: Teacher creates an attendance session for a specific class
-2. **Student Enrollment**: Students are pre-enrolled with face descriptors stored in database
-3. **Live Recognition**: Camera captures faces and sends images to backend
-4. **Face Detection**: YOLO-based detector identifies face regions
-5. **Feature Extraction**: Deep learning model generates face embeddings (512-d vectors)
-6. **Similarity Matching**: Cosine similarity compares embeddings against enrolled students
-7. **Attendance Marking**: Matches are recorded in Supabase with session constraints
-8. **Real-time Updates**: Frontend displays marked attendance instantly
+1. **Session Creation**: Teacher creates an attendance session for a specific class.
+2. **Location Capture**: Teacher's precise GPS location (6 decimal places) is stored as the geofence center.
+3. **Mode Selection**:
+   - **Teacher-Led**: Teacher captures students using their device (for quick batch marking).
+   - **Student Self-Capture**: Students mark their own attendance via a secure link (requires valid location).
+4. **Student Enrollment**: Students are pre-enrolled with face descriptors stored in database.
+5. **Live Recognition**: Camera captures faces and sends images to backend.
+6. **Face Detection**: YOLO-based detector identifies face regions.
+7. **Feature Extraction**: Deep learning model generates face embeddings (512-d vectors).
+8. **Similarity Matching**: Cosine similarity compares embeddings against enrolled students.
+9. **Validation**: Checks for:
+   - Face match confidence (> 0.45)
+   - Geolocation (must be within ~15m of teacher)
+   - Device Uniqueness (prevents proxy)
+10. **Attendance Marking**: Matches are recorded in Supabase.
+11. **Real-time Updates**: Frontend displays marked attendance instantly.
 
 ---
 
@@ -268,7 +279,10 @@ python add_missing_students.py
 Before deploying the backend, ensure your Supabase database is set up correctly.
 
 1.  **Run Initial Schema**: Execute `supabase_schema.sql` in the Supabase SQL Editor.
-2.  **Run Migrations**: Execute `migrations/01_add_ip_to_attendance.sql` in the Supabase SQL Editor to enable IP-based one-device attendance enforcement.
+2.  **Run Migrations**: Execute the following files in order:
+    - `migrations/01_add_ip_to_attendance.sql` (Enables IP-based one-device enforcement)
+    - `migrations/02_add_location_to_sessions.sql` (Adds teacher location storage)
+    - `migrations/03_enforce_location_precision.sql` (Enforces 6-decimal precision for coordinates)
 
 ---
 ## 🌐 Production Deployment
@@ -423,12 +437,23 @@ After production deployment, access the system on mobile devices:
    - **Division**: A, B, C
    - **Subject**: Select from dropdown or enter custom
    - **Classroom**: Room number (101-1110)
-4. Click **"Create Session"**
-5. Share the generated session link with students
+4. **Select Capture Mode**:
+   - **Teacher Mode**: You scan students using your device.
+   - **Student Mode**: Generate a QR code for students to scan and mark their own attendance.
+5. **Start Session**: The session begins, and your location is locked as the class center.
 
-#### 2. Monitoring Attendance
+#### 2. Student Self-Capture (New)
 
-1. Go to **"Session Details"** page
+If you select "Student Mode":
+1. A QR code is displayed on your screen.
+2. Students scan the QR code with their phones.
+3. They are redirected to a secure capture page.
+4. Their location is validated against your (teacher's) location (within ~15m).
+5. They capture their face to mark attendance.
+
+#### 3. Monitoring Attendance
+
+1. Go to **"Session Details"** page.
 2. View real-time attendance updates
 3. See total count of students marked present
 4. Check individual student details
@@ -454,33 +479,26 @@ After production deployment, access the system on mobile devices:
 
 #### 1. Accessing the Session
 
-1. Click the session link shared by teacher
-2. Or navigate directly to `/session/{session_id}`
+1. **Scan QR Code**: Use your phone camera to scan the QR code displayed by the teacher.
+2. **Open Link**: Or use the direct link shared by the teacher.
+3. **Allow Permissions**: Grant camera and location access when prompted.
 
 #### 2. Marking Attendance
 
-**Method A: Camera Recognition (Recommended)**
-1. Click **"Use Camera"** button
-2. Allow camera access when prompted
-3. Position your face within the frame
-4. System will auto-detect and mark attendance
-5. Green confirmation appears on success
-
-**Method B: Manual Selection**
-1. Click **"Manual Entry"** button
-2. Select your name from the dropdown
-3. Click **"Mark Attendance"**
-4. Confirmation message appears
+1. **Location Check**: The system verifies you are within range of the classroom.
+2. **Face Capture**: Position your face within the frame.
+3. **Auto-Mark**: The system detects your face, verifies your identity, and marks you present.
+4. **One-Device Check**: You cannot mark attendance for others using the same device.
 
 ---
 
-### Attendance Methods
+### Attendance Modes
 
-| Method | Speed | Accuracy | Best For |
-|--------|-------|----------|----------|
-| 🎥 **Camera Recognition** | Instant | 90-95% | Well-lit classrooms |
-| 👤 **Manual Selection** | 5-10 sec | 100% | Poor lighting, camera issues |
-| 📱 **Mobile Camera** | Instant | 85-90% | On-the-go attendance |
+| Mode | Description | Best For |
+|------|-------------|----------|
+| 🤳 **Student Self-Capture** | Students mark their own attendance via QR/Link | Large classes, quick entry |
+| 👨‍🏫 **Teacher-Led Capture** | Teacher scans students one by one | Controlled environments, labs |
+| 📍 **Geofenced Entry** | Requires being physically present in class | Preventing proxy attendance |
 
 ---
 

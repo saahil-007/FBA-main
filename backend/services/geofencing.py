@@ -25,7 +25,7 @@ class GeofencingService:
     ) -> float:
         """
         Calculate the great circle distance between two points on Earth.
-        Uses the Haversine formula.
+        Uses the Haversine formula with 6 decimal place precision.
         
         Args:
             lat1, lon1: First point coordinates (classroom)
@@ -34,6 +34,12 @@ class GeofencingService:
         Returns:
             Distance in meters
         """
+        # Enforce 6 decimal place precision
+        lat1 = round(lat1, 6)
+        lon1 = round(lon1, 6)
+        lat2 = round(lat2, 6)
+        lon2 = round(lon2, 6)
+        
         # Convert latitude and longitude from degrees to radians
         lat1_rad = math.radians(lat1)
         lat2_rad = math.radians(lat2)

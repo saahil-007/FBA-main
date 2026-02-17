@@ -117,8 +117,8 @@ const NewAttendance = () => {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const location = {
-            lat: position.coords.latitude,
-            lon: position.coords.longitude
+            lat: Number(position.coords.latitude.toFixed(6)),
+            lon: Number(position.coords.longitude.toFixed(6))
           };
           setTeacherLocation(location);
           setLocationError(null);
