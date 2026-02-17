@@ -22,10 +22,10 @@ const NiceTry = () => {
         <CardContent className="space-y-6 text-center">
           <div className="space-y-2">
             <p className="text-lg font-medium text-foreground">
-              Proxy Lagane k baare me soch rhe h kya bhai!
+              Proxy nhi lagegi bhai!
             </p>
             <p className="text-muted-foreground">
-              Bhul jao sir bhi dekh rahe hai aur mai bhi.
+              Rehn de, sir bhi dekh rahe hai aur mai bhi.
             </p>
           </div>
           

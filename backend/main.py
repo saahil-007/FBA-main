@@ -704,8 +704,8 @@ async def validate_location(request: LocationValidationRequest):
         geofence_lon = session.get("teacher_longitude")
         radius = session.get("geofence_radius", 10) # Default 10m
         
-        # If teacher location is not set, try classroom location
-        if geofence_lat is None or geofence_lon is None:
+        # If teacher location is not set, try classroom location ONLY IF NOT in student self-capture mode
+        if (geofence_lat is None or geofence_lon is None) and session.get("capture_mode") != "student":
             class_name = session.get("class_name")
             if class_name:
                 classroom_resp = supabase.table("classrooms").select("*").eq("room_no", class_name).single().execute()
@@ -716,6 +716,8 @@ async def validate_location(request: LocationValidationRequest):
         
         # If still no location, we cannot validate
         if geofence_lat is None or geofence_lon is None:
+             if session.get("capture_mode") == "student":
+                 raise HTTPException(status_code=400, detail="Teacher location (geofence) not found for this session. Please ask the teacher to re-create the session with location enabled.")
              raise HTTPException(status_code=400, detail="Geofence location (teacher or classroom) not configured for this session")
 
         
@@ -850,8 +852,8 @@ async def student_self_capture(
         classroom_lat = None
         classroom_lon = None
         
-        # Try to get classroom coordinates as fallback
-        if session.get("class_name"):
+        # Try to get classroom coordinates as fallback (ONLY if not student capture mode)
+        if session.get("class_name") and session.get("capture_mode") != "student":
             classroom_resp = supabase.table("classrooms").select("*").eq("room_no", session.get("class_name")).single().execute()
             classroom = classroom_resp.data if classroom_resp.data else None
             if classroom:
@@ -863,7 +865,19 @@ async def student_self_capture(
         geofence_lon = None
         geofence_source = None
         
-        if use_teacher_location and teacher_lat and teacher_lon:
+        # For student self-capture, ALWAYS use teacher location
+        if session.get("capture_mode") == "student":
+            if not teacher_lat or not teacher_lon:
+                return {
+                    "success": False,
+                    "error": "Teacher location missing",
+                    "message": "Teacher location not found for this session. Please ask the teacher to re-create the session.",
+                    "location_valid": False
+                }
+            geofence_lat = teacher_lat
+            geofence_lon = teacher_lon
+            geofence_source = "teacher"
+        elif use_teacher_location and teacher_lat and teacher_lon:
             geofence_lat = teacher_lat
             geofence_lon = teacher_lon
             geofence_source = "teacher"
@@ -1081,6 +1095,58 @@ async def student_recognize(
                 "error": "IP already marked",
                 "already_marked": True,
                 "message": "Attendance already marked from this device"
+            }
+
+        # Validate Geofence (Teacher Location)
+        teacher_lat = session.get("teacher_latitude")
+        teacher_lon = session.get("teacher_longitude")
+        
+        # Enforce teacher location for student capture
+        if session.get("capture_mode") == "student":
+            if not teacher_lat or not teacher_lon:
+                 return {
+                    "success": False,
+                    "error": "Teacher location missing",
+                    "message": "Teacher location not found for this session.",
+                    "face_detected": False
+                }
+            geofence_lat = teacher_lat
+            geofence_lon = teacher_lon
+        else:
+            # Fallback logic for other modes if needed
+            geofence_lat = teacher_lat
+            geofence_lon = teacher_lon
+        
+        # Validate
+        location_verified = False
+        distance_from_classroom = None
+        
+        if geofence_lat and geofence_lon:
+             validation = geofencing_service.validate_location(
+                classroom_lat=geofence_lat,
+                classroom_lon=geofence_lon,
+                student_lat=student_lat,
+                student_lon=student_lon,
+                radius_meters=session.get("geofence_radius", 15)
+            )
+             
+             distance_from_classroom = validation["distance_meters"]
+             
+             if not validation["valid"]:
+                 return {
+                    "success": False,
+                    "error": "Location validation failed",
+                    "message": f"You are {validation['distance_meters']:.1f}m away. Must be within {session.get('geofence_radius', 15)}m.",
+                    "face_detected": False,
+                    "distance": validation["distance_meters"]
+                }
+             location_verified = True
+        elif session.get("capture_mode") == "student":
+             return {
+                "success": False,
+                "error": "Teacher location missing",
+                "message": "Teacher location not found for this session.",
+                "face_detected": False
             }
 
         # Load embeddings

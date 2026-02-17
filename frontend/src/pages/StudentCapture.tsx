@@ -55,7 +55,7 @@ const StudentCapture = () => {
 
   // Check if already marked and handle expiration
   useEffect(() => {
-    // One Device One Attendance Check
+    // One Device One Attendance Check (Local)
     const deviceKey = `attendance_marked_device_${sessionId}`;
     if (localStorage.getItem(deviceKey)) {
       navigate(`/student/nice-try?sessionId=${sessionId}`);
@@ -231,25 +231,36 @@ const StudentCapture = () => {
       let alreadyMarked = false;
       let markedData: any = null;
       
-      if (isProduction()) {
-        try {
-          const response = await fetch(`${API_URL}/check-attendance-status/${sessionId}`, {
-            method: 'GET',
-            credentials: 'include'
-          });
-          if (response.ok) {
-            const data = await response.json();
-            alreadyMarked = data.already_marked;
+      // Always check with backend first (IP-based check)
+      try {
+        const response = await fetch(`${API_URL}/check-attendance-status/${sessionId}`, {
+          method: 'GET',
+          credentials: 'include'
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data.already_marked) {
+            alreadyMarked = true;
             markedData = data;
           }
-        } catch (err) {
-          console.error("Error checking attendance status:", err);
         }
-      } else {
+      } catch (err) {
+        console.error("Error checking attendance status from backend:", err);
+      }
+      
+      // Fallback to localStorage if backend didn't flag it (or failed)
+      if (!alreadyMarked) {
         const storedData = localStorage.getItem(getAttendanceKey('any'));
         if (storedData) {
-          markedData = JSON.parse(storedData);
-          alreadyMarked = markedData?.marked || false;
+          try {
+            const parsed = JSON.parse(storedData);
+            if (parsed?.marked) {
+              markedData = parsed;
+              alreadyMarked = true;
+            }
+          } catch (e) {
+            console.error("Error parsing localStorage data:", e);
+          }
         }
       }
       

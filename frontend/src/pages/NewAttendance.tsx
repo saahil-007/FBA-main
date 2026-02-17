@@ -150,7 +150,10 @@ const NewAttendance = () => {
       const location = await captureTeacherLocation();
       
       if (!location) {
-        toast.warning("Could not capture location. Students will be able to mark attendance from anywhere.");
+        toast.error("Location capture failed! Teacher location is required for this session.");
+        setSubmitting(false);
+        setCapturingLocation(false);
+        return;
       } else {
         toast.success(`Location captured: ${location.lat.toFixed(4)}, ${location.lon.toFixed(4)}`);
       }
