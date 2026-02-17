@@ -55,6 +55,13 @@ const StudentCapture = () => {
 
   // Check if already marked and handle expiration
   useEffect(() => {
+    // One Device One Attendance Check
+    const deviceKey = `attendance_marked_device_${sessionId}`;
+    if (localStorage.getItem(deviceKey)) {
+      navigate(`/student/nice-try?sessionId=${sessionId}`);
+      return;
+    }
+    
     checkSessionAndAttendance();
   }, [sessionId]);
 
@@ -541,6 +548,10 @@ const StudentCapture = () => {
 
   const markAttendance = async (recognitionData: any) => {
     try {
+      // Mark attendance for this device to prevent reuse
+      const deviceKey = `attendance_marked_device_${sessionId}`;
+      localStorage.setItem(deviceKey, "true");
+
       // Mark in localStorage for localhost
       if (!isProduction()) {
         const attendanceKey = getAttendanceKey(rollNumber.trim());

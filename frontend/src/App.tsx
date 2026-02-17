@@ -14,6 +14,7 @@ import TeacherPastSessions from "./pages/TeacherPastSessions";
 import SessionDetails from "./pages/SessionDetails";
 import StudentListView from "./pages/StudentListView";
 import StudentCapture from "./pages/StudentCapture";
+import NiceTry from "./pages/NiceTry";
 import NotFound from "./pages/NotFound";
 import { useEffect, useState } from "react";
 import { supabase } from "./lib/supabase";
@@ -89,6 +90,7 @@ const App = () => (
           <Route path="/student/camera/:sessionId" element={<CameraRecognition />} />
           <Route path="/student/view/:sessionId" element={<StudentListView />} />
           <Route path="/student-capture/:sessionId" element={<StudentCapture />} />
+          <Route path="/student/nice-try" element={<NiceTry />} />
           
           <Route path="/teacher/past-sessions" element={
             <ProtectedRoute>
