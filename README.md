@@ -263,6 +263,13 @@ cd backend
 python add_missing_students.py
 ```
 
+### Database Setup (Supabase)
+
+Before deploying the backend, ensure your Supabase database is set up correctly.
+
+1.  **Run Initial Schema**: Execute `supabase_schema.sql` in the Supabase SQL Editor.
+2.  **Run Migrations**: Execute `migrations/01_add_ip_to_attendance.sql` in the Supabase SQL Editor to enable IP-based one-device attendance enforcement.
+
 ---
 ## 🌐 Production Deployment
 

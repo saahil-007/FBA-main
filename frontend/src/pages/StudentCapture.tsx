@@ -256,13 +256,9 @@ const StudentCapture = () => {
       if (alreadyMarked && markedData) {
         setMarkedStudentName(markedData.studentName || markedData.student_name);
         setMarkedRollNumber(markedData.rollNumber || markedData.roll_number);
-        setStep('already_marked');
         
-        setTimeout(() => {
-          const name = markedData.studentName || markedData.student_name || '';
-          const roll = markedData.rollNumber || markedData.roll_number || '';
-          navigate(`/student/view/${sessionId}?marked=true&name=${encodeURIComponent(name)}&roll=${roll}`);
-        }, 5000);
+        // Redirect to Nice Try page as requested for duplicate attempts
+        navigate(`/student/nice-try?sessionId=${sessionId}`);
         return;
       }
       
@@ -486,6 +482,11 @@ const StudentCapture = () => {
       );
 
       const data = await response.json();
+
+      if (data.already_marked) {
+        navigate(`/student/nice-try?sessionId=${sessionId}`);
+        return;
+      }
 
       if (data.success) {
         // Face matched!

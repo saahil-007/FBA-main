@@ -788,6 +788,17 @@ async def student_self_capture(
                 detail="This session is not configured for student self-capture mode"
             )
         
+        # Check IP attendance (One Device One Attendance)
+        client_ip = _get_client_ip(request)
+        ip_check = supabase.table("attendance_records").select("id").eq("session_id", session_id).eq("ip_address", client_ip).execute()
+        if ip_check.data and len(ip_check.data) > 0:
+            return {
+                "success": False,
+                "error": "IP already marked",
+                "already_marked": True,
+                "message": "Attendance already marked from this device"
+            }
+        
         # 2. Load embeddings cache (same as teacher mode)
         known_embeddings = embedding_manager.get_session_embeddings(session_id)
         if known_embeddings is None:
@@ -998,7 +1009,8 @@ async def student_self_capture(
             "student_latitude": student_lat,
             "student_longitude": student_lon,
             "distance_from_classroom": distance_from_classroom,
-            "verification_method": "student_self_capture"
+            "verification_method": "student_self_capture",
+            "ip_address": _get_client_ip(request)
         }
         
         mark_resp = supabase.table("attendance_records").insert(attendance_data).execute()
@@ -1060,6 +1072,17 @@ async def student_recognize(
                 "face_detected": False
             }
         
+        # Check IP attendance (One Device One Attendance)
+        client_ip = _get_client_ip(request)
+        ip_check = supabase.table("attendance_records").select("id").eq("session_id", session_id).eq("ip_address", client_ip).execute()
+        if ip_check.data and len(ip_check.data) > 0:
+            return {
+                "success": False,
+                "error": "IP already marked",
+                "already_marked": True,
+                "message": "Attendance already marked from this device"
+            }
+
         # Load embeddings
         known_embeddings = embedding_manager.get_session_embeddings(session_id)
         if known_embeddings is None:
@@ -1172,7 +1195,8 @@ async def student_recognize(
                 "location_verified": True,
                 "student_latitude": student_lat,
                 "student_longitude": student_lon,
-                "verification_method": "student_self_capture_auto"
+                "verification_method": "student_self_capture_auto",
+                "ip_address": _get_client_ip(request)
             }
             
             try:
@@ -1403,10 +1427,20 @@ async def get_geofence_info(session_id: str):
 # Note: This is cleared on server restart. For persistent tracking, use Redis or database.
 _attendance_tracking: Dict[str, Dict[str, Any]] = {}
 
+def _get_client_ip(request: Request) -> str:
+    """Get the client's real IP address, handling proxies."""
+    # Check X-Forwarded-For header first (standard for proxies like Render/Vercel)
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    
+    # Fallback to direct connection IP
+    return request.client.host if request.client else "unknown"
+
 def _get_device_fingerprint(request: Request) -> str:
     """Generate a device fingerprint from request headers"""
     user_agent = request.headers.get("user-agent", "")
-    ip = request.client.host if request.client else "unknown"
+    ip = _get_client_ip(request)
     # Combine IP and user agent for a simple fingerprint
     return f"{ip}:{hash(user_agent) % 10000000}"
 
@@ -1422,10 +1456,32 @@ async def check_attendance_status(session_id: str, request: Request):
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
         
-        # Get device fingerprint
+        # Get client IP
+        client_ip = _get_client_ip(request)
+        
+        # Check database for this IP in this session
+        # This is the primary check for "One Device One Attendance"
+        ip_records = supabase.table("attendance_records").select("student_id, created_at, students(name, roll_no)")\
+            .eq("session_id", session_id)\
+            .eq("ip_address", client_ip)\
+            .execute()
+            
+        if ip_records.data and len(ip_records.data) > 0:
+            record = ip_records.data[0]
+            student_info = record.get("students", {})
+            return {
+                "already_marked": True,
+                "student_name": student_info.get("name") if student_info else "Unknown",
+                "roll_number": student_info.get("roll_no") if student_info else "Unknown",
+                "marked_at": record.get("created_at"),
+                "message": "Attendance already marked from this device (IP check)"
+            }
+
+        # Get device fingerprint (fallback for same IP different browser scenarios if needed, 
+        # though IP check covers most "same device" cases)
         device_id = _get_device_fingerprint(request)
         
-        # Check if this device has already marked attendance
+        # Check if this device has already marked attendance (in-memory cache)
         session_tracking = _attendance_tracking.get(session_id, {})
         device_data = session_tracking.get(device_id)
         
@@ -1438,19 +1494,6 @@ async def check_attendance_status(session_id: str, request: Request):
                 "message": "Attendance already marked from this device"
             }
         
-        # Also check via Supabase to see if this session already has records
-        # (in case server was restarted)
-        records = supabase.table("attendance_records").select("*, students(name, roll_no)").eq("session_id", session_id).execute()
-        
-        if records.data and len(records.data) > 0:
-            # Check if any record matches this device's IP (approximate check)
-            # This is a fallback in case server memory was cleared
-            return {
-                "already_marked": False,  # Allow retry, but log it
-                "existing_count": len(records.data),
-                "message": "Session has existing attendance records"
-            }
-        
         return {
             "already_marked": False,
             "message": "No attendance marked yet from this device"
@@ -1460,7 +1503,14 @@ async def check_attendance_status(session_id: str, request: Request):
         raise
     except Exception as e:
         logger.exception(f"Error checking attendance status for session {session_id}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Fail open if DB error, or fail closed? 
+        # For security, better to log error and allow unless confirmed bad.
+        # But if table column is missing, this will error out.
+        # We'll return False but log exception.
+        return {
+            "already_marked": False,
+            "error": str(e)
+        }
 
 @app.get("/check-roll-attendance/{session_id}/{roll_number}")
 async def check_roll_attendance(session_id: str, roll_number: str, request: Request):

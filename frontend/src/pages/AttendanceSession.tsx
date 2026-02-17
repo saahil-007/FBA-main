@@ -566,7 +566,7 @@ const AttendanceSession = () => {
             </Card>
 
             {/* Instructions */}
-            <div className="text-sm text-muted-foreground space-y-2">
+            {/* <div className="text-sm text-muted-foreground space-y-2">
               <p className="font-medium text-foreground">How it works:</p>
               <ul className="list-disc list-inside space-y-1">
                 <li>Students open the link on their phones</li>
@@ -575,7 +575,7 @@ const AttendanceSession = () => {
                 <li>Face is matched against enrolled photo</li>
                 <li>Liveness check prevents photo spoofing</li>
               </ul>
-            </div>
+            </div> */}
           </>
         )}
 
