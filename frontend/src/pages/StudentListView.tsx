@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Loader2, CheckCircle2, Users, FileText, Table as TableIcon, Camera, PartyPopper } from "lucide-react";
+import { Loader2, CheckCircle2, Users, FileText, Table as TableIcon, PartyPopper } from "lucide-react";
 
 import { API_URL } from "@/config";
 
@@ -249,16 +249,7 @@ const StudentListView = () => {
           </p>
         </div>
 
-        {/* Actions */}
-        {session.status === 'active' && (
-          <Button 
-            className="w-full h-12 gap-2" 
-            onClick={() => window.open(`/student/camera/${sessionId}`, '_blank')}
-          >
-            <Camera className="w-5 h-5" />
-            Open Camera to Mark Attendance
-          </Button>
-        )}
+
 
         {/* Stats Cards */}
         <div className="grid grid-cols-4 gap-2">
