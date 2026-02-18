@@ -22,7 +22,7 @@ const NiceTry = () => {
         <CardContent className="space-y-6 text-center">
           <div className="space-y-2">
             <p className="text-lg font-medium text-foreground">
-              Proxy na lagti bhai!
+              Proxy na lagti bete!
             </p>
             <p className="text-muted-foreground">
               Rehn de, sir bhi dekh rahe hai aur mai bhi.
