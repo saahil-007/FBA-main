@@ -239,6 +239,38 @@ async def create_session(request: SessionCreate):
         )
 
     try:
+        # Validate classroom format (301-310 for floors 3-11)
+        if request.classroom:
+            try:
+                classroom_num = int(request.classroom)
+                if classroom_num < 301 or classroom_num > 1110:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Classroom must be between 301 and 1110"
+                    )
+                
+                floor = classroom_num // 100
+                room = classroom_num % 100
+                
+                # Validate floor range (3-11)
+                if floor < 3 or floor > 11:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Floor must be between 3 and 11"
+                    )
+                
+                # Validate room range (01-10, which translates to 301-310, 401-410, etc.)
+                if room < 1 or room > 10:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Room must be between 01 and 10 (e.g., 301, 302, ..., 310)"
+                    )
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Invalid classroom format. Must be a number between 301 and 1110"
+                )
+
         # 1. Insert session into Supabase
         # Note: The schema for attendance_sessions might require class_id instead of branch/year/division
         # We'll need to find the class_id first or ensure the table supports these fields.
@@ -1482,6 +1514,68 @@ async def get_geofence_info(session_id: str):
         raise
     except Exception as e:
         logger.exception(f"Error getting geofence info for session {session_id}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# TEACHER LOCATION REAL-TIME UPDATES
+# ============================================================================
+
+class TeacherLocationUpdateRequest(BaseModel):
+    session_id: str
+    teacher_lat: float
+    teacher_lon: float
+
+@app.post("/update-teacher-location")
+async def update_teacher_location(request: TeacherLocationUpdateRequest):
+    """
+    Update teacher's real-time location for active sessions.
+    This enables dynamic geofencing where the classroom center moves with the teacher.
+    """
+    try:
+        # Validate coordinates
+        if not (-90 <= request.teacher_lat <= 90):
+            raise HTTPException(status_code=400, detail="Invalid latitude. Must be between -90 and 90.")
+        if not (-180 <= request.teacher_lon <= 180):
+            raise HTTPException(status_code=400, detail="Invalid longitude. Must be between -180 and 180.")
+        
+        # Get session
+        session_resp = supabase.table("sessions").select("*").eq("id", request.session_id).single().execute()
+        if not session_resp.data:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        session = session_resp.data
+        
+        # Only update active sessions
+        if session.get("status") != "active":
+            raise HTTPException(status_code=400, detail="Cannot update location for inactive session")
+        
+        # Update teacher location with 5 decimal precision as requested
+        update_data = {
+            "teacher_latitude": round(request.teacher_lat, 5),
+            "teacher_longitude": round(request.teacher_lon, 5)
+        }
+        
+        update_resp = supabase.table("sessions").update(update_data).eq("id", request.session_id).execute()
+        
+        # In recent versions of supabase/postgrest, .execute() raises an exception on error.
+        # If we reach here, the request was successful.
+        if not update_resp.data:
+             logger.warning(f"Update location successful but no data returned for session {request.session_id}")
+        
+        logger.info(f"Updated teacher location for session {request.session_id}: ({request.teacher_lat}, {request.teacher_lon})")
+        
+        return {
+            "success": True,
+            "message": "Teacher location updated successfully",
+            "teacher_latitude": request.teacher_lat,
+            "teacher_longitude": request.teacher_lon
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error updating teacher location for session {request.session_id}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

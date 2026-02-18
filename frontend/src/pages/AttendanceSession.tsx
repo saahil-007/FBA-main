@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Search, UserPlus } from "lucide-react";
 import { API_URL } from "@/config";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
+import { useTeacherLocation } from "@/hooks/useTeacherLocation";
 
 const AttendanceSession = () => {
   const { sessionId } = useParams();
@@ -43,6 +44,9 @@ const AttendanceSession = () => {
   const [attendanceCount, setAttendanceCount] = useState(0);
   const [totalStudents, setTotalStudents] = useState(0);
   const [copiedLink, setCopiedLink] = useState(false);
+  
+  // Real-time teacher location state
+  const [enableRealTimeLocation, setEnableRealTimeLocation] = useState(false);
 
   useEffect(() => {
     fetchSessionDetails();
@@ -83,6 +87,29 @@ const AttendanceSession = () => {
       supabase.removeChannel(channel);
     };
   }, [sessionId, allStudents]);
+
+  // Real-time teacher location hook
+  const { location: teacherLocation, error: locationError } = useTeacherLocation({
+    sessionId: sessionId || '',
+    enabled: enableRealTimeLocation && session?.status === 'active',
+    updateInterval: 3000 // 3 seconds as requested
+  });
+
+  // Enable real-time location when session is active
+  useEffect(() => {
+    if (session?.status === 'active') {
+      setEnableRealTimeLocation(true);
+    } else {
+      setEnableRealTimeLocation(false);
+    }
+  }, [session?.status]);
+
+  // Show location error if any
+  useEffect(() => {
+    if (locationError) {
+      toast.error(`Location update error: ${locationError}`);
+    }
+  }, [locationError]);
 
   const fetchAllStudents = async () => {
     if (!session) return;
@@ -244,19 +271,28 @@ const AttendanceSession = () => {
     }
 
     // Check if session is older than 1 hour and still active
-    if (data.status === 'active') {
-      const createdAt = new Date(data.created_at).getTime();
-      const now = new Date().getTime();
-      const oneHour = 60 * 60 * 1000;
+    // Temporarily disable this logic to prevent premature session completion
+    // if (data.status === 'active') {
+    //   const createdAt = new Date(data.created_at).getTime();
+    //   const now = new Date().getTime();
+    //   const oneHour = 60 * 60 * 1000;
 
-      if (now - createdAt > oneHour) {
-        data.status = 'completed';
-        // Optionally notify the user or update the DB (though backend already handles DB)
-      }
-    }
+    //   if (now - createdAt > oneHour) {
+    //     data.status = 'completed';
+    //     // Optionally notify the user or update the DB (though backend already handles DB)
+    //   }
+    // }
 
     setSession(data);
     setLoading(false);
+    
+    // Debug log for session status
+    console.log("Session loaded:", {
+      id: data.id,
+      status: data.status,
+      created_at: data.created_at,
+      classroom: data.classroom
+    });
   };
 
   const fetchPresentStudents = async () => {
@@ -510,7 +546,19 @@ const AttendanceSession = () => {
         </div>
       </header>
 
-      <main className="px-4 py-4 max-w-lg mx-auto space-y-4">
+      {/* Loading State */}
+      {loading && (
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      )}
+
+      {/* Main Content - Only show when not loading */}
+      {!loading && (
+        <main className="px-4 py-4 max-w-lg mx-auto space-y-4">
+        
+        {/* Debug Session Info - REMOVED */}
+
         {/* v2: Student Self-Capture Mode UI */}
         {isV2 && (
           <>
@@ -867,6 +915,7 @@ const AttendanceSession = () => {
           </CardContent>
         </Card>
       </main>
+      )}
 
       <MobileBottomNav />
     </div>

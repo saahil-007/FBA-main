@@ -19,7 +19,7 @@ class GeofenceConfig:
     DEFAULT_RADIUS_METERS = 15
     
     # Minimum radius allowed (security)
-    MIN_RADIUS_METERS = 5
+    MIN_RADIUS_METERS = 25
     
     # Maximum radius allowed (practical limit)
     MAX_RADIUS_METERS = 100

@@ -25,7 +25,7 @@ class GeofencingService:
     ) -> float:
         """
         Calculate the great circle distance between two points on Earth.
-        Uses the Haversine formula with 6 decimal place precision.
+        Uses the Haversine formula with 5 decimal place precision as requested.
         
         Args:
             lat1, lon1: First point coordinates (classroom)
@@ -34,11 +34,11 @@ class GeofencingService:
         Returns:
             Distance in meters
         """
-        # Enforce 6 decimal place precision
-        lat1 = round(lat1, 6)
-        lon1 = round(lon1, 6)
-        lat2 = round(lat2, 6)
-        lon2 = round(lon2, 6)
+        # Enforce 5 decimal place precision as requested for robust accuracy
+        lat1 = round(lat1, 5)
+        lon1 = round(lon1, 5)
+        lat2 = round(lat2, 5)
+        lon2 = round(lon2, 5)
         
         # Convert latitude and longitude from degrees to radians
         lat1_rad = math.radians(lat1)
@@ -95,6 +95,10 @@ class GeofencingService:
         Validate student location against classroom geofence.
         Returns detailed validation result.
         """
+        # Add logging for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+
         if classroom_lat is None or classroom_lon is None:
             return {
                 "valid": False,
@@ -103,19 +107,29 @@ class GeofencingService:
                 "is_within_geofence": False
             }
         
+        # Use provided radius or default
         radius = radius_meters if radius_meters is not None else self.default_radius
         
-        is_within, distance = self.is_within_geofence(
+        # ROBUSTNESS FIX: Enforce a minimum radius of 25 meters.
+        # Indoor GPS accuracy is often poor (10-20m error is common).
+        # If the teacher/default set a very small radius (e.g. 10m), we override it 
+        # to prevent valid students from being blocked due to minor GPS drift.
+        effective_radius = max(radius, 25.0)
+        
+        distance = self.calculate_distance(
             classroom_lat, classroom_lon,
-            student_lat, student_lon,
-            radius
+            student_lat, student_lon
         )
+        
+        is_within = distance <= effective_radius
+        
+        logger.info(f"Geofence check: Dist={distance:.2f}m, Radius={effective_radius}m (Original={radius}), Valid={is_within}")
         
         return {
             "valid": is_within,
             "distance_meters": round(distance, 2),
             "is_within_geofence": is_within,
-            "classroom_radius": radius,
+            "classroom_radius": effective_radius,
             "classroom_location": {"lat": classroom_lat, "lon": classroom_lon},
             "student_location": {"lat": student_lat, "lon": student_lon}
         }

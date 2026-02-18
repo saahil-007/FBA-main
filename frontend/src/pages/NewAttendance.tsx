@@ -12,8 +12,19 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 
 import { API_URL } from "@/config";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
+import { validateClassroom } from "@/lib/classroomValidation";
 
-const DEFAULT_GEOFENCE_RADIUS = 10;
+const DEFAULT_GEOFENCE_RADIUS = 50;
+
+const TIME_SLOTS = [
+  { label: "10:00 AM", value: "10:00" },
+  { label: "11:00 AM", value: "11:00" },
+  { label: "12:00 Noon", value: "12:00" },
+  { label: "01:45 PM", value: "13:45" },
+  { label: "02:45 PM", value: "14:45" },
+  { label: "03:45 PM", value: "15:45" },
+  { label: "04:45 PM", value: "16:45" },
+];
 
 const NewAttendance = () => {
   const [loading, setLoading] = useState(true);
@@ -47,6 +58,9 @@ const NewAttendance = () => {
   const [teacherLocation, setTeacherLocation] = useState<{lat: number, lon: number} | null>(null);
   const [capturingLocation, setCapturingLocation] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  
+  // Classroom validation state
+  const [classroomError, setClassroomError] = useState<string | null>(null);
 
   useEffect(() => {
     checkUser();
@@ -139,10 +153,34 @@ const NewAttendance = () => {
     captureTeacherLocation();
   }, []);
 
+  const handleClassroomChange = (value: string) => {
+    setFormData(prev => ({ ...prev, classroom: value }));
+    
+    if (value.trim() === '') {
+      setClassroomError(null);
+      return;
+    }
+    
+    const validation = validateClassroom(value);
+    if (!validation.isValid) {
+      setClassroomError(validation.error || 'Invalid classroom');
+    } else {
+      setClassroomError(null);
+    }
+  };
+
   const handleCreateSession = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.branch || !formData.year || !formData.division || !formData.subject || !formData.classroom || !formData.startTime) {
       toast.error("Please fill all fields");
+      return;
+    }
+
+    // Validate classroom
+    const classroomValidation = validateClassroom(formData.classroom);
+    if (!classroomValidation.isValid) {
+      toast.error(classroomValidation.error || "Invalid classroom number");
+      setClassroomError(classroomValidation.error || "Invalid classroom number");
       return;
     }
 
@@ -357,14 +395,17 @@ const NewAttendance = () => {
                   <Label className="text-xs">Room No.</Label>
                   <Input
                     type="number"
-                    placeholder="201-1110"
-                    min="201"
+                    placeholder="301-310 (Floors 3-11)"
+                    min="301"
                     max="1110"
-                    className="h-11 bg-background border-border text-sm"
+                    className={`h-11 bg-background border-border text-sm ${classroomError ? 'border-red-500' : ''}`}
                     value={formData.classroom}
-                    onChange={(e) => setFormData({...formData, classroom: e.target.value})}
+                    onChange={(e) => handleClassroomChange(e.target.value)}
                     required
                   />
+                  {classroomError && (
+                    <p className="text-xs text-red-500 mt-1">{classroomError}</p>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -401,13 +442,19 @@ const NewAttendance = () => {
                 {/* Start Time */}
                 <div className="space-y-1.5">
                   <Label className="text-xs">Start Time</Label>
-                  <input
-                    type="time"
-                    className="flex h-11 w-full rounded-md border border-border bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    value={formData.startTime}
-                    onChange={(e) => setFormData({...formData, startTime: e.target.value})}
-                    required
-                  />
+                  <Select 
+                    value={formData.startTime} 
+                    onValueChange={(v) => setFormData({...formData, startTime: v})}
+                  >
+                    <SelectTrigger className="h-11 bg-background border-border text-sm">
+                      <SelectValue placeholder="Select Time" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TIME_SLOTS.map((slot) => (
+                        <SelectItem key={slot.value} value={slot.value}>{slot.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* Duration */}

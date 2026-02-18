@@ -400,8 +400,9 @@ const StudentCapture = () => {
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
-        const lat = Number(position.coords.latitude.toFixed(6));
-        const lon = Number(position.coords.longitude.toFixed(6));
+        // Use 5 decimal places for high accuracy (~1.1m precision) as requested
+        const lat = Number(position.coords.latitude.toFixed(5));
+        const lon = Number(position.coords.longitude.toFixed(5));
         setLocation({ lat, lon });
         
         try {
@@ -426,6 +427,7 @@ const StudentCapture = () => {
             console.log("Validation successful, setting state...");
             setIsWithinClassroom(true);
             setDistanceFromClassroom(validation.distance_meters);
+            
             toast.success(`Location verified! You're ${validation.distance_meters?.toFixed(1) || 0}m from classroom`);
             
             console.log("Location verified, switching to camera in 1s...");
